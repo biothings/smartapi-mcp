@@ -1,0 +1,1 @@
+# Tests for smartapi-mcp package
