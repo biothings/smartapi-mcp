@@ -1,2 +1,2 @@
 # Runtime dependencies for smartapi-mcp
-aiohttp>=3.8.0
+.

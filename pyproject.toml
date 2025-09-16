@@ -20,19 +20,18 @@ classifiers = [
     "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: Internet :: WWW/HTTP :: HTTP Servers",
     "Topic :: Scientific/Engineering :: Bio-Informatics",
 ]
 keywords = ["mcp", "smartapi", "api", "server", "bioinformatics"]
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 dependencies = [
-    "aiohttp>=3.8.0",
+    "awslabs_openapi_mcp_server>=0.2.4",
 ]
 
 [project.optional-dependencies]
@@ -40,9 +39,7 @@ dev = [
     "pytest>=7.0.0",
     "pytest-asyncio>=0.21.0",
     "pytest-cov>=4.0.0",
-    "flake8>=5.0.0",
-    "black>=22.0.0",
-    "isort>=5.10.0",
+    "ruff>=0.1.0",
     "build>=0.8.0",
     "twine>=4.0.0",
 ]
@@ -50,6 +47,10 @@ test = [
     "pytest>=7.0.0",
     "pytest-asyncio>=0.21.0",
     "pytest-cov>=4.0.0",
+]
+docs = [
+    "sphinx>=5.0.0",
+    "sphinx-rtd-theme>=1.0.0",
 ]
 
 [project.urls]
@@ -81,33 +82,12 @@ addopts = [
 ]
 asyncio_mode = "auto"
 
-[tool.black]
+[tool.ruff]
+# Ruff configuration for linting and formatting
 line-length = 88
-target-version = ["py38", "py39", "py310", "py311", "py312"]
-include = '\.pyi?$'
-extend-exclude = '''
-/(
-  # directories
-  \.eggs
-  | \.git
-  | \.hg
-  | \.mypy_cache
-  | \.tox
-  | \.venv
-  | build
-  | dist
-)/
-'''
+target-version = "py310"
 
-[tool.isort]
-profile = "black"
-multi_line_output = 3
-line_length = 88
-known_first_party = ["smartapi_mcp"]
-
-[tool.flake8]
-max-line-length = 88
-extend-ignore = ["E203", "W503"]
+# Exclude directories and files
 exclude = [
     ".git",
     "__pycache__",
@@ -117,4 +97,127 @@ exclude = [
     "*.egg-info",
     ".venv",
     ".tox",
+    ".mypy_cache",
+    ".pytest_cache",
 ]
+
+[tool.ruff.lint]
+# Enable specific rule sets
+select = [
+    # Pyflakes
+    "F",
+    # pycodestyle errors
+    "E",
+    # pycodestyle warnings
+    "W",
+    # isort
+    "I",
+    # pep8-naming
+    "N",
+    # pyupgrade
+    "UP",
+    # flake8-2020
+    "YTT",
+    # flake8-async
+    "ASYNC",
+    # flake8-bandit (security)
+    "S",
+    # flake8-boolean-trap
+    "FBT",
+    # flake8-bugbear
+    "B",
+    # flake8-builtins
+    "A",
+    # flake8-commas - excluding COM812 to avoid conflicts with formatter
+    "COM",
+    # flake8-comprehensions
+    "C4",
+    # flake8-datetimez
+    "DTZ",
+    # flake8-debugger
+    "T10",
+    # flake8-errmsg
+    "EM",
+    # flake8-implicit-str-concat
+    "ISC",
+    # flake8-import-conventions
+    "ICN",
+    # flake8-logging-format
+    "G",
+    # flake8-pie
+    "PIE",
+    # flake8-print
+    "T20",
+    # flake8-pytest-style
+    "PT",
+    # flake8-quotes
+    "Q",
+    # flake8-return
+    "RET",
+    # flake8-simplify
+    "SIM",
+    # flake8-tidy-imports
+    "TID",
+    # flake8-unused-arguments
+    "ARG",
+    # pylint
+    "PL",
+    # Ruff-specific rules
+    "RUF",
+]
+
+# Ignore specific rules
+ignore = [
+    # Allow non-abstract empty methods in abstract base classes
+    "B027",
+    # Allow boolean positional values in function calls
+    "FBT003",
+    # Ignore complexity
+    "C901", "PLR0911", "PLR0912", "PLR0913", "PLR0915",
+    # Allow print statements (useful for CLI tools)
+    "T201",
+    # Allow assert statements
+    "S101",
+    # Allow subprocess without shell=True check
+    "S603", "S607",
+    # Disable COM812 to avoid conflicts with formatter
+    "COM812",
+]
+
+[tool.ruff.format]
+# Use double quotes for strings
+quote-style = "double"
+
+# Use spaces around the equals sign
+indent-style = "space"
+
+# Respect magic trailing comma
+skip-magic-trailing-comma = false
+
+# Automatically detect line ending
+line-ending = "auto"
+
+[tool.ruff.lint.isort]
+# Import sorting configuration (replaces isort)
+known-first-party = ["smartapi_mcp"]
+force-single-line = false
+force-sort-within-sections = false
+split-on-trailing-comma = true
+
+[tool.ruff.lint.flake8-quotes]
+# Use double quotes
+inline-quotes = "double"
+multiline-quotes = "double"
+docstring-quotes = "double"
+
+[tool.ruff.lint.mccabe]
+# McCabe complexity
+max-complexity = 10
+
+[tool.ruff.lint.per-file-ignores]
+# Tests can use magic values, assertions, and fixtures
+"tests/*" = ["PLR2004", "S101", "PT011", "PT012"]
+# CLI module can use print statements and sys.exit
+"smartapi_mcp/cli.py" = ["T201", "PLR0913"]
+# Allow star imports in __init__.py
+"__init__.py" = ["F401", "F403"]
