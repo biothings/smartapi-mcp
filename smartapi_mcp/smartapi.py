@@ -7,6 +7,10 @@ Handles interaction with the SmartAPI registry.
 import re
 
 import httpx
+from awslabs.openapi_mcp_server import logger
+from awslabs.openapi_mcp_server.api.config import Config
+from awslabs.openapi_mcp_server.utils.openapi import load_openapi_spec
+from awslabs.openapi_mcp_server.utils.openapi_validator import validate_openapi_spec
 
 smartapi_query_url = "https://smart-api.info/api/query?q={q}&fields=_id&size=500&raw=1"
 
@@ -24,6 +28,19 @@ async def get_smartapi_ids(q: str) -> list:
             smartapi_id = api["_id"]
             smartapi_ids.append(smartapi_id)
     return smartapi_ids
+
+
+def load_api_spec(smartapi_id: str) -> dict:
+    config = Config(
+        api_spec_url=f"https://smart-api.info/api/metadata/{smartapi_id}",
+    )
+    api_spec = load_openapi_spec(url=config.api_spec_url)
+
+    # Validate the OpenAPI spec
+    if not validate_openapi_spec(api_spec):
+        logger.warning("OpenAPI specification validation failed, but continuing anyway")
+
+    return api_spec
 
 
 def get_base_server_url(api_spec: dict) -> str:

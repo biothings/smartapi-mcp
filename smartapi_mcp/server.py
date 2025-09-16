@@ -8,24 +8,17 @@ import re
 
 from awslabs.openapi_mcp_server import logger
 from awslabs.openapi_mcp_server.api.config import Config
-from awslabs.openapi_mcp_server.utils.openapi import load_openapi_spec
-from awslabs.openapi_mcp_server.utils.openapi_validator import validate_openapi_spec
 from fastmcp import FastMCP
 
 from .awslabs_server import create_mcp_server
-from .smartapi import get_base_server_url, get_smartapi_ids
+from .smartapi import get_base_server_url, get_smartapi_ids, load_api_spec
 
 
 async def get_mcp_server(smartapi_id: str) -> FastMCP:
     config = Config(
         api_spec_url=f"https://smart-api.info/api/metadata/{smartapi_id}",
     )
-    openapi_spec = load_openapi_spec(url=config.api_spec_url)
-
-    # Validate the OpenAPI spec
-    if not validate_openapi_spec(openapi_spec):
-        logger.warning("OpenAPI specification validation failed, but continuing anyway")
-
+    openapi_spec = load_api_spec(smartapi_id)
     base_server_url = get_base_server_url(openapi_spec)
     config.api_base_url = base_server_url
 
