@@ -1,0 +1,23 @@
+# Include package metadata and documentation files
+include README.md
+include LICENSE
+include requirements.txt
+include requirements-dev.txt
+include pyproject.toml
+
+# Include package data
+recursive-include smartapi_mcp *.py
+recursive-include smartapi_mcp py.typed
+
+# Exclude development and build files
+global-exclude *.pyc
+global-exclude __pycache__
+global-exclude *.so
+global-exclude .DS_Store
+exclude .gitignore
+exclude .github
+recursive-exclude tests *
+recursive-exclude .github *
+recursive-exclude build *
+recursive-exclude dist *
+recursive-exclude *.egg-info *

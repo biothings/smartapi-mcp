@@ -1,0 +1,120 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "smartapi-mcp"
+version = "0.1.0"
+description = "Create MCP servers for one or multiple APIs registered in SmartAPI registry"
+readme = "README.md"
+license = {text = "Apache-2.0"}
+authors = [
+    {name = "BioThings Team", email = "help@biothings.io"}
+]
+maintainers = [
+    {name = "BioThings Team", email = "help@biothings.io"}
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Internet :: WWW/HTTP :: HTTP Servers",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+]
+keywords = ["mcp", "smartapi", "api", "server", "bioinformatics"]
+requires-python = ">=3.8"
+dependencies = [
+    "aiohttp>=3.8.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.0.0",
+    "flake8>=5.0.0",
+    "black>=22.0.0",
+    "isort>=5.10.0",
+    "build>=0.8.0",
+    "twine>=4.0.0",
+]
+test = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/biothings/smartapi-mcp"
+Repository = "https://github.com/biothings/smartapi-mcp"
+Issues = "https://github.com/biothings/smartapi-mcp/issues"
+Documentation = "https://github.com/biothings/smartapi-mcp#readme"
+
+[project.scripts]
+smartapi-mcp = "smartapi_mcp.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["smartapi_mcp*"]
+exclude = ["tests*"]
+
+[tool.setuptools.package-data]
+smartapi_mcp = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "--verbose",
+    "--cov=smartapi_mcp",
+    "--cov-report=term-missing",
+    "--cov-report=html",
+]
+asyncio_mode = "auto"
+
+[tool.black]
+line-length = 88
+target-version = ["py38", "py39", "py310", "py311", "py312"]
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+)/
+'''
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+line_length = 88
+known_first_party = ["smartapi_mcp"]
+
+[tool.flake8]
+max-line-length = 88
+extend-ignore = ["E203", "W503"]
+exclude = [
+    ".git",
+    "__pycache__",
+    "build",
+    "dist",
+    ".eggs",
+    "*.egg-info",
+    ".venv",
+    ".tox",
+]
