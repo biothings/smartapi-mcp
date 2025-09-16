@@ -14,12 +14,12 @@ try:
     from .smartapi import get_base_server_url, get_smartapi_ids, load_api_spec
 
     __all__ = [
+        "get_base_server_url",
         "get_mcp_server",
-        "merge_mcp_server",
         "get_merged_mcp_server",
         "get_smartapi_ids",
         "load_api_spec",
-        "get_base_server_url",
+        "merge_mcp_server",
     ]
 except ImportError:
     # Dependencies not available, only export version info
