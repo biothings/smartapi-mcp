@@ -12,6 +12,7 @@ import sys
 from pathlib import Path
 
 
+# add * below to force check to be a keyword argument only
 def run_command(cmd, cwd=None, *, check=True):
     """Run a shell command and return the result."""
     print(f"Running: {' '.join(cmd)}")
