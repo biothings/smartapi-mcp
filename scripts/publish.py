@@ -78,24 +78,29 @@ def upload_to_test_pypi():
     """Upload package to Test PyPI and optionally test installation."""
     print("\n🧪 Uploading to Test PyPI...")
     try:
-        run_command([
-            "python", "-m", "twine", "upload",
-            "--repository", "testpypi", "dist/*"
-        ])
+        run_command(
+            ["python", "-m", "twine", "upload", "--repository", "testpypi", "dist/*"]
+        )
         print("✅ Successfully uploaded to Test PyPI!")
         print("🔗 Check your package at:")
         print("https://test.pypi.org/project/smartapi-mcp/")
 
-        test_install = input(
-            "\nTest installation from Test PyPI? (Y/n): "
-        ).strip().lower()
+        test_install = (
+            input("\nTest installation from Test PyPI? (Y/n): ").strip().lower()
+        )
         if test_install != "n":
             print("🧪 Testing installation from Test PyPI...")
-            run_command([
-                "pip", "install", "-i", "https://test.pypi.org/simple/",
-                "--extra-index-url", "https://pypi.org/simple/",
-                "smartapi-mcp"
-            ])
+            run_command(
+                [
+                    "pip",
+                    "install",
+                    "-i",
+                    "https://test.pypi.org/simple/",
+                    "--extra-index-url",
+                    "https://pypi.org/simple/",
+                    "smartapi-mcp",
+                ]
+            )
         return True
     except Exception:
         print("❌ Failed to upload to Test PyPI")
@@ -138,9 +143,7 @@ def main():
         return
 
     # Final upload to PyPI
-    final_response = input(
-        "\nProceed with upload to PyPI? (y/N): "
-    ).strip().lower()
+    final_response = input("\nProceed with upload to PyPI? (y/N): ").strip().lower()
     if final_response == "y":
         if not upload_to_pypi():
             return
