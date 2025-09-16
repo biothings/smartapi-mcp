@@ -1,7 +1,11 @@
-# The following code contains modified functions from awslabs/openapi-mcp-server implementation.
-# The original file name is server.py, the following changes were made for better reuse in smartapi-mcp
-#  * Modified `create_mcp_server` function to be async and awaitable, avoid to use asyncio.run
-#  * Extracted `get_all_counts` function out of `main` function, so it can be used in other modules
+# The following code contains modified functions from awslabs/openapi-mcp-server
+# implementation.
+# The original file name is `server.py`, the following changes were made for better
+# reuse in smartapi-mcp:
+#   * Modified `create_mcp_server` function to be async and awaitable, avoid to use
+#     asyncio.run
+#   * Extracted `get_all_counts` function out of `main` function, so it can be used
+#     in other modules
 #
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 #

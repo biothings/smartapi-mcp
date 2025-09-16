@@ -7,6 +7,7 @@ Provides CLI commands for running and managing the SmartAPI MCP server.
 import argparse
 import asyncio
 import sys
+import traceback
 
 from awslabs.openapi_mcp_server import logger
 from awslabs.openapi_mcp_server.server import setup_signal_handlers
@@ -21,7 +22,10 @@ def main():
     )
     parser.add_argument(
         "--api_set",
-        help="the set of predefined SmartAPI APIs to include, e.g. 'biothings_core' or 'biothings'.",
+        help=(
+            "the set of predefined SmartAPI APIs to include, e.g. 'biothings_core' "
+            "or 'biothings'."
+        ),
     )
     parser.add_argument(
         "--mode",
@@ -76,19 +80,22 @@ def main():
 
         # Log all counts in a single statement
         logger.info(
-            f"Server components: {prompt_count} prompts, {tool_count} tools, {resource_count} resources, {resource_template_count} resource templates"
+            f"Server components: {prompt_count} prompts, {tool_count} tools, "
+            f"{resource_count} resources, {resource_template_count} resource templates"
         )
 
         # Check if we have at least one tool or resource
         if tool_count == 0 and resource_count == 0:
             logger.warning(
-                "No tools or resources were registered. This might indicate an issue with the API specification or authentication."
+                (
+                    "No tools or resources were registered. This might "
+                    "indicate an issue "
+                    "with the API specification or authentication."
+                ),
             )
     except Exception as e:
         logger.error(f"Error counting tools and resources: {e}")
         logger.error("Server shutting down due to error in tool/resource registration.")
-        import traceback
-
         logger.error(f"Traceback: {traceback.format_exc()}")
         sys.exit(1)
 

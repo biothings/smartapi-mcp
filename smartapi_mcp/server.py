@@ -36,8 +36,8 @@ async def merge_mcp_servers(
     list_of_servers: list[FastMCP], merged_name: str = "merged_mcp"
 ) -> FastMCP:
     """
-    Merges a list of FastMCP instances into a single FastMCP instance by combining their tools,
-    prefixing tool names with the server's name (API name) to avoid conflicts.
+    Merges a list of FastMCP instances into a single FastMCP instance by combining their
+    tools, prefixing tool names with the server's name (API name) to avoid conflicts.
 
     Args:
         list_of_servers: List of FastMCP instances to merge.
