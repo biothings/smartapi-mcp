@@ -219,5 +219,8 @@ max-complexity = 10
 "tests/*" = ["PLR2004", "S101", "PT011", "PT012"]
 # CLI module can use print statements and sys.exit
 "smartapi_mcp/cli.py" = ["T201", "PLR0913"]
-# Allow star imports in __init__.py
-"__init__.py" = ["F401", "F403"]
+# Do not fix linting errors in awslabs_server.py as it's
+# based on the original codebase
+"smartapi_mcp/awslabs_server.py" = ["ALL"]
+# Allow star imports and unused imports in __init__.py
+"__init__.py" = ["F401", "F403", "F405"]
