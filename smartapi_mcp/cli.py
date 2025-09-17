@@ -13,6 +13,7 @@ from awslabs.openapi_mcp_server import logger
 from awslabs.openapi_mcp_server.server import setup_signal_handlers
 
 from .awslabs_server import get_all_counts
+from .config import load_config
 from .server import get_merged_mcp_server
 
 
@@ -28,48 +29,71 @@ def main():
         ),
     )
     parser.add_argument(
-        "--mode",
-        help="The mode of MCP server, either stdio or http. Default is stdio.",
+        "--smartapi_id",
+        help="Pass a single SmartAPI (id) to create a MCP server.",
+    )
+    parser.add_argument(
+        "--smartapi_ids",
+        help="Pass a list of SmartAPIs (comma-separated ids) to create a MCP server.",
+    )
+    parser.add_argument(
+        "--smartapi_q",
+        help="Pass a query string for a list of SmartAPIs to create a MCP server.",
+    )
+    parser.add_argument(
+        "--smartapi_exclude_ids",
+        help=(
+            "Exclude a list of SmartAPIs (comma-separated ids) to create a MCP server."
+        ),
+    )
+    parser.add_argument(
+        "--host",
+        help="The host address for the MCP server in HTTP mode. Default is localhost.",
     )
     parser.add_argument(
         "--port",
         type=int,
-        default=8001,
-        help="The http port for the MCP server in HTTP mode. Default is 8001.",
+        default=8000,
+        help="The http port for the MCP server in HTTP mode. Default is 8000.",
     )
+    parser.add_argument(
+        "--transport",
+        help="The transport mode for the MCP server, either stdio (default) or http.",
+    )
+    parser.add_argument(
+        "--server_name",
+        help='The name of the MCP server, default is "smartapi_mcp".',
+    )
+    parser.add_argument(
+        "--log-level",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        default="INFO",
+        help="Set logging level",
+    )
+
     args = parser.parse_args()
 
-    if args.api_set == "biothings_core":
-        smartapi_ids = [
-            "59dce17363dce279d389100834e43648",  # MyGene.info
-            "09c8782d9f4027712e65b95424adba79",  # MyVariant.info
-            "8f08d1446e0bb9c2b323713ce83e2bd3",  # MyChem.info
-            "671b45c0301c8624abbd26ae78449ca2",  # MyDisease.info
-            "1d288b3a3caf75d541ffaae3aab386c8",  # SemmedDB
-        ]
-        merged_server = asyncio.run(
-            get_merged_mcp_server(smartapi_ids=smartapi_ids, server_name="smartapi_mcp")
-        )
-    else:
-        # args.api_set == "biothings" this is the default
-        smartapi_q = (
-            "_status.uptime_status:pass AND tags.name=biothings AND NOT tags.name=trapi"
-        )
+    # Set up logging with loguru at specified level
+    logger.remove()
+    logger.add(lambda msg: print(msg, end=""), level=args.log_level)
+    logger.info(f"Starting server with logging level: {args.log_level}")
 
-        smartapi_ids_excluded = [
-            "1c9be9e56f93f54192dcac203f21c357",  # BioThings mabs API
-            "5a4c41bf2076b469a0e9cfcf2f2b8f29",  # Translator Annotation Service
-            "cc857d5b7c8b7609b5bbb38ff990bfff",  # BioThings GO Biological Process API
-            "f339b28426e7bf72028f60feefcd7465",  # BioThings GO Cellular Component API
-            "34bad236d77bea0a0ee6c6cba5be54a6",  # BioThings GO Molecular Function API
-        ]
-        merged_server = asyncio.run(
-            get_merged_mcp_server(
-                smartapi_q=smartapi_q,
-                server_name="smartapi_mcp",
-                exclude_ids=smartapi_ids_excluded,
-            )
+    # Load configuration
+    logger.debug("Loading configuration from arguments and environment")
+    config = load_config(args)
+    logger.debug("Configuration loaded.")
+
+    merged_server = asyncio.run(
+        get_merged_mcp_server(
+            smartapi_q=config.smartapi_q,
+            smartapi_id=config.smartapi_id,
+            smartapi_ids=config.smartapi_ids,
+            smartapi_exclude_ids=config.smartapi_exclude_ids,
+            api_set=config.smartapi_api_set,
+            server_name=config.server_name,
         )
+    )
+
     # Set up signal handlers
     setup_signal_handlers()
 
@@ -99,10 +123,12 @@ def main():
         logger.error(f"Traceback: {traceback.format_exc()}")
         sys.exit(1)
 
-    if args.mode == "http":
-        # Run server with stdio transport only
-        logger.info("Running server with HTTP transport")
-        merged_server.run(transport="http", host="127.0.0.1", port=args.port)
+    if config.transport in ["http", "sse"]:
+        # Run server with http transport only
+        logger.info(f"Running server with {config.transport} transport")
+        merged_server.run(
+            transport=config.transport, host=config.host, port=config.port
+        )
         return
     # Otherwise run server with stdio transport by default
     logger.info("Running server with stdio transport")

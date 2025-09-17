@@ -111,7 +111,7 @@ def test_get_base_server_url_no_suitable_server():
             {"url": "https://staging.api.example.com", "description": "Staging server"},
         ],
     }
-    with pytest.raises(ValueError) as exc_info:
+    with pytest.raises(ValueError, match="Cannot determine server URL") as exc_info:
         get_base_server_url(api_spec)
 
     assert "Cannot determine server URL for API: test_api" in str(exc_info.value)

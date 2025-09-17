@@ -66,3 +66,47 @@ def get_base_server_url(api_spec: dict) -> str:
         err_msg = err_msg.format(api_name, api_spec["servers"])
         raise ValueError(err_msg)
     return base_server_url
+
+
+PREDEFINED_API_SETS = ["biothings_core", "biothings_test", "biothings_all"]
+
+
+def get_predefined_api_set(api_set: str) -> dict:
+    """Return the predefined API set for the given set name."""
+    if api_set == "biothings_core":
+        return {
+            "smartapi_ids": [
+                "59dce17363dce279d389100834e43648",  # MyGene.info
+                "09c8782d9f4027712e65b95424adba79",  # MyVariant.info
+                "8f08d1446e0bb9c2b323713ce83e2bd3",  # MyChem.info
+                "671b45c0301c8624abbd26ae78449ca2",  # MyDisease.info
+            ]
+        }
+    if api_set == "biothings_test":
+        # biothings core APIs plus the SemmedDB API, useful for testings
+        return {
+            "smartapi_ids": [
+                "59dce17363dce279d389100834e43648",  # MyGene.info
+                "09c8782d9f4027712e65b95424adba79",  # MyVariant.info
+                "8f08d1446e0bb9c2b323713ce83e2bd3",  # MyChem.info
+                "671b45c0301c8624abbd26ae78449ca2",  # MyDisease.info
+                "1d288b3a3caf75d541ffaae3aab386c8",  # SemmedDB
+            ]
+        }
+    if api_set == "biothings_all":
+        # include all biothings APIs with a few excluded
+        return {
+            "smartapi_q": (
+                "_status.uptime_status:pass AND tags.name=biothings AND"
+                " NOT tags.name=trapi"
+            ),
+            "smartapi_exlude_ids": [
+                "1c9be9e56f93f54192dcac203f21c357",  # BioThings mabs API
+                "5a4c41bf2076b469a0e9cfcf2f2b8f29",  # Translator Annotation Service
+                "cc857d5b7c8b7609b5bbb38ff990bfff",  # GO Biological Process API
+                "f339b28426e7bf72028f60feefcd7465",  # GO Cellular Component API
+                "34bad236d77bea0a0ee6c6cba5be54a6",  # GO Molecular Function API
+            ],
+        }
+    err_msg = f"Unknown API set: {api_set}"
+    raise ValueError(err_msg)

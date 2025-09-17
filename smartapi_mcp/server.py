@@ -11,7 +11,12 @@ from awslabs.openapi_mcp_server.api.config import Config
 from fastmcp import FastMCP
 
 from .awslabs_server import create_mcp_server
-from .smartapi import get_base_server_url, get_smartapi_ids, load_api_spec
+from .smartapi import (
+    get_base_server_url,
+    get_predefined_api_set,
+    get_smartapi_ids,
+    load_api_spec,
+)
 
 
 async def get_mcp_server(smartapi_id: str) -> FastMCP:
@@ -63,18 +68,39 @@ async def merge_mcp_servers(
 
 async def get_merged_mcp_server(
     smartapi_q: str | None = None,
+    smartapi_id: str | None = None,
     smartapi_ids: list[str] | None = None,
-    exclude_ids: list[str] | None = None,
+    smartapi_exclude_ids: list[str] | None = None,
+    api_set: str | None = None,
     server_name: str = "smartapi_mcp",
 ) -> FastMCP:
+    logger.debug(f"api_set: {api_set}")
+    if api_set:
+        api_set_args = get_predefined_api_set(api_set)
+        if "smartapi_ids" in api_set_args:
+            smartapi_ids = api_set_args["smartapi_ids"]
+        if "smartapi_q" in api_set_args:
+            smartapi_q = api_set_args["smartapi_q"]
+        if "smartapi_exclude_ids" in api_set_args:
+            smartapi_exclude_ids = api_set_args["smartapi_exclude_ids"]
+        logger.debug(f"api_set_args: {api_set_args}")
+    logger.debug(f"smartapi_ids: {smartapi_ids}")
+    logger.debug(f"smartapi_q: {smartapi_q}")
+    logger.debug(f"smartapi_exclude_ids: {smartapi_exclude_ids}")
     if smartapi_q:
         smartapi_ids = await get_smartapi_ids(smartapi_q)
+    if smartapi_id:
+        smartapi_ids = [smartapi_id]
+    if smartapi_ids:
+        smartapi_ids = list(set(smartapi_ids))
     if not smartapi_ids:
         err_msg = "No SmartAPI IDs provided or found with the given query."
         raise ValueError(err_msg)
-    exclude_ids = exclude_ids or []
+    smartapi_exclude_ids = smartapi_exclude_ids or []
     list_of_servers = [
-        await get_mcp_server(sid) for sid in smartapi_ids if sid not in exclude_ids
+        await get_mcp_server(sid)
+        for sid in smartapi_ids
+        if sid not in smartapi_exclude_ids
     ]
     merged_server = await merge_mcp_servers(list_of_servers, server_name)
     logger.info(f"Merged {len(list_of_servers)} APIs into one MCP server.")
