@@ -100,7 +100,7 @@ def get_predefined_api_set(api_set: str) -> dict:
                 "_status.uptime_status:pass AND tags.name=biothings AND"
                 " NOT tags.name=trapi"
             ),
-            "smartapi_exlude_ids": [
+            "smartapi_exclude_ids": [
                 "1c9be9e56f93f54192dcac203f21c357",  # BioThings mabs API
                 "5a4c41bf2076b469a0e9cfcf2f2b8f29",  # Translator Annotation Service
                 "cc857d5b7c8b7609b5bbb38ff990bfff",  # GO Biological Process API
