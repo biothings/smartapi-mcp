@@ -49,7 +49,7 @@ async def test_get_merged_mcp_server():
 
     merged_server = await get_merged_mcp_server(
         smartapi_ids=[test_api_id_1, test_api_id_2],
-        exclude_ids=[test_api_id_1, test_api_id_2],
+        smartapi_exclude_ids=[test_api_id_1, test_api_id_2],
     )
     assert isinstance(merged_server, FastMCP)
     tools = await merged_server.get_tools()
