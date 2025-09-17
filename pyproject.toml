@@ -87,6 +87,7 @@ asyncio_mode = "auto"
 source = ["smartapi_mcp"]
 omit = [
     "smartapi_mcp/awslabs_server.py",
+    "smartapi_mcp/__main__.py",
     "tests/*",
 ]
 
@@ -235,8 +236,8 @@ docstring-quotes = "double"
 max-complexity = 10
 
 [tool.ruff.lint.per-file-ignores]
-# Tests can use magic values, assertions, and fixtures
-"tests/*" = ["PLR2004", "S101", "PT011", "PT012"]
+# Tests can use magic values, assertions, fixtures, and unused mock arguments
+"tests/*" = ["PLR2004", "S101", "PT011", "PT012", "ARG002", "PT019"]
 # CLI module can use print statements and sys.exit
 "smartapi_mcp/cli.py" = ["T201", "PLR0913"]
 # Do not fix linting errors in awslabs_server.py as it's

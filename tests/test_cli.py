@@ -75,7 +75,12 @@ class TestCLI:
     @patch("smartapi_mcp.cli.load_config")
     @patch("sys.argv", ["smartapi-mcp", "--api_set", "biothings_core"])
     def test_main_biothings_core_stdio_mode(
-        self, mock_load_config, mock_setup_signals, mock_get_counts, mock_get_server, mock_asyncio
+        self,
+        mock_load_config,
+        mock_setup_signals,
+        mock_get_all_counts,
+        mock_get_merged_mcp_server,
+        mock_asyncio,
     ):
         """Test main function with biothings_core API set and stdio mode."""
         # Setup config mock
@@ -96,7 +101,7 @@ class TestCLI:
         call_count = [0]  # Use list to make it mutable in nested function
 
         # Mock asyncio.run to return the expected values
-        def mock_run_side_effect(coro):
+        def mock_run_side_effect(_coro):
             call_count[0] += 1
             if call_count[0] == 1:
                 # First call is get_merged_mcp_server
@@ -104,7 +109,7 @@ class TestCLI:
             if call_count[0] == 2:
                 # Second call is get_all_counts
                 return (1, 5, 3, 2)
-            return coro
+            return None
 
         mock_asyncio.run.side_effect = mock_run_side_effect
 
@@ -128,7 +133,13 @@ class TestCLI:
     @patch("smartapi_mcp.cli.get_all_counts")
     @patch("smartapi_mcp.cli.load_config")
     @patch("sys.argv", ["smartapi-mcp", "--api_set", "biothings_all"])
-    def test_main_biothings_api_set(self, mock_load_config, mock_get_counts, mock_get_server, mock_asyncio):
+    def test_main_biothings_api_set(
+        self,
+        mock_load_config,
+        mock_get_all_counts,
+        mock_get_merged_mcp_server,
+        mock_asyncio,
+    ):
         """Test main function with biothings_all API set."""
         # Setup config mock
         mock_config = MagicMock()
@@ -148,7 +159,7 @@ class TestCLI:
         call_count = [0]
 
         # Mock asyncio.run calls
-        def mock_run_side_effect(coro):
+        def mock_run_side_effect(_coro):
             call_count[0] += 1
             if call_count[0] == 1:
                 # First call is get_merged_mcp_server
@@ -156,7 +167,7 @@ class TestCLI:
             if call_count[0] == 2:
                 # Second call is get_all_counts
                 return (2, 10, 5, 3)
-            return coro
+            return None
 
         mock_asyncio.run.side_effect = mock_run_side_effect
 
@@ -173,8 +184,25 @@ class TestCLI:
     @patch("smartapi_mcp.cli.get_merged_mcp_server")
     @patch("smartapi_mcp.cli.get_all_counts")
     @patch("smartapi_mcp.cli.load_config")
-    @patch("sys.argv", ["smartapi-mcp", "--transport", "http", "--port", "9001", "--smartapi_id", "test_id"])
-    def test_main_http_mode(self, mock_load_config, mock_get_counts, mock_get_server, mock_asyncio):
+    @patch(
+        "sys.argv",
+        [
+            "smartapi-mcp",
+            "--transport",
+            "http",
+            "--port",
+            "9001",
+            "--smartapi_id",
+            "test_id",
+        ],
+    )
+    def test_main_http_mode(
+        self,
+        mock_load_config,
+        mock_get_all_counts,
+        mock_get_merged_mcp_server,
+        mock_asyncio,
+    ):
         """Test main function with HTTP mode."""
         # Setup config mock
         mock_config = MagicMock()
@@ -196,7 +224,7 @@ class TestCLI:
         call_count = [0]
 
         # Mock asyncio.run calls
-        def mock_run_side_effect(coro):
+        def mock_run_side_effect(_coro):
             call_count[0] += 1
             if call_count[0] == 1:
                 # First call is get_merged_mcp_server
@@ -204,7 +232,7 @@ class TestCLI:
             if call_count[0] == 2:
                 # Second call is get_all_counts
                 return (1, 3, 2, 1)
-            return coro
+            return None
 
         mock_asyncio.run.side_effect = mock_run_side_effect
 
@@ -222,7 +250,11 @@ class TestCLI:
     @patch("smartapi_mcp.cli.load_config")
     @patch("sys.argv", ["smartapi-mcp", "--smartapi_id", "test_id"])
     def test_main_stdio_mode_default(
-        self, mock_load_config, mock_get_counts, mock_get_server, mock_asyncio
+        self,
+        mock_load_config,
+        mock_get_all_counts,
+        mock_get_merged_mcp_server,
+        mock_asyncio,
     ):
         """Test main function with default stdio mode."""
         # Setup config mock
@@ -243,7 +275,7 @@ class TestCLI:
         call_count = [0]
 
         # Mock asyncio.run calls
-        def mock_run_side_effect(coro):
+        def mock_run_side_effect(_coro):
             call_count[0] += 1
             if call_count[0] == 1:
                 # First call is get_merged_mcp_server
@@ -251,7 +283,7 @@ class TestCLI:
             if call_count[0] == 2:
                 # Second call is get_all_counts
                 return (1, 3, 2, 1)
-            return coro
+            return None
 
         mock_asyncio.run.side_effect = mock_run_side_effect
 
@@ -267,7 +299,11 @@ class TestCLI:
     @patch("smartapi_mcp.cli.load_config")
     @patch("sys.argv", ["smartapi-mcp", "--smartapi_id", "test_id"])
     def test_main_no_tools_or_resources_warning(
-        self, mock_load_config, mock_get_counts, mock_get_server, mock_asyncio
+        self,
+        mock_load_config,
+        mock_get_all_counts,
+        mock_get_merged_mcp_server,
+        mock_asyncio,
     ):
         """Test main function warns when no tools or resources are available."""
         # Setup config mock
@@ -288,7 +324,7 @@ class TestCLI:
         call_count = [0]
 
         # Mock asyncio.run calls
-        def mock_run_side_effect(coro):
+        def mock_run_side_effect(_coro):
             call_count[0] += 1
             if call_count[0] == 1:
                 # First call is get_merged_mcp_server
@@ -296,7 +332,7 @@ class TestCLI:
             if call_count[0] == 2:
                 # Second call is get_all_counts
                 return (1, 0, 0, 1)  # No tools or resources
-            return coro
+            return None
 
         mock_asyncio.run.side_effect = mock_run_side_effect
 
@@ -313,7 +349,11 @@ class TestCLI:
     @patch("smartapi_mcp.cli.load_config")
     @patch("sys.argv", ["smartapi-mcp", "--smartapi_id", "test_id"])
     def test_main_counts_exception_handling(
-        self, mock_load_config, mock_get_counts, mock_get_server, mock_asyncio
+        self,
+        mock_load_config,
+        mock_get_all_counts,
+        mock_get_merged_mcp_server,
+        mock_asyncio,
     ):
         """Test main function handles exceptions during count retrieval."""
         # Setup config mock
@@ -334,15 +374,16 @@ class TestCLI:
         call_count = [0]
 
         # Mock asyncio.run calls - server creation succeeds, count retrieval fails
-        def mock_run_side_effect(coro):
+        def mock_run_side_effect(_coro):
             call_count[0] += 1
             if call_count[0] == 1:
                 # First call is get_merged_mcp_server
                 return mock_server
             if call_count[0] == 2:
                 # Second call is get_all_counts
-                raise Exception("Count error")
-            return coro
+                error_msg = "Count error"
+                raise Exception(error_msg)
+            return None
 
         mock_asyncio.run.side_effect = mock_run_side_effect
 
@@ -358,7 +399,11 @@ class TestCLI:
     @patch("smartapi_mcp.cli.load_config")
     @patch("sys.argv", ["smartapi-mcp", "--api_set", "unknown"])
     def test_main_unknown_api_set_raises_error(
-        self, mock_load_config, mock_get_counts, mock_get_server, mock_asyncio
+        self,
+        mock_load_config,
+        mock_get_all_counts,
+        mock_get_merged_mcp_server,
+        mock_asyncio,
     ):
         """Test main function raises error for unknown API set."""
         # Setup config mock
@@ -373,9 +418,10 @@ class TestCLI:
         mock_load_config.return_value = mock_config
 
         # Mock asyncio.run to raise ValueError for unknown API set
-        def mock_run_side_effect(coro):
+        def mock_run_side_effect(_coro):
             # First call is get_merged_mcp_server - should fail
-            raise ValueError("Unknown API set: unknown")
+            error_msg = "Unknown API set: unknown"
+            raise ValueError(error_msg)
 
         mock_asyncio.run.side_effect = mock_run_side_effect
 
@@ -397,8 +443,8 @@ class TestCLI:
 
         with (
             patch("smartapi_mcp.cli.asyncio") as mock_asyncio,
-            patch("smartapi_mcp.cli.get_merged_mcp_server") as mock_get_server,
-            patch("smartapi_mcp.cli.get_all_counts") as mock_get_counts,
+            patch("smartapi_mcp.cli.get_merged_mcp_server"),
+            patch("smartapi_mcp.cli.get_all_counts"),
             patch("smartapi_mcp.cli.setup_signal_handlers"),
             patch("smartapi_mcp.cli.load_config") as mock_load_config,
         ):
@@ -421,7 +467,7 @@ class TestCLI:
             call_count = [0]
 
             # Mock asyncio.run calls
-            def mock_run_side_effect(coro):
+            def mock_run_side_effect(_coro):
                 call_count[0] += 1
                 if call_count[0] == 1:
                     # First call is get_merged_mcp_server
@@ -429,7 +475,7 @@ class TestCLI:
                 if call_count[0] == 2:
                     # Second call is get_all_counts
                     return (1, 3, 2, 1)
-                return coro
+                return None
 
             mock_asyncio.run.side_effect = mock_run_side_effect
 
@@ -456,7 +502,13 @@ class TestCLIEdgeCases:
     @patch("smartapi_mcp.cli.get_all_counts")
     @patch("smartapi_mcp.cli.load_config")
     @patch("sys.argv", ["smartapi-mcp", "--api_set", ""])
-    def test_empty_api_set(self, mock_load_config, mock_get_counts, mock_get_server, mock_asyncio):
+    def test_empty_api_set(
+        self,
+        mock_load_config,
+        mock_get_all_counts,
+        mock_get_merged_mcp_server,
+        mock_asyncio,
+    ):
         """Test main function with empty API set string."""
         # Setup config mock
         mock_config = MagicMock()
@@ -470,9 +522,10 @@ class TestCLIEdgeCases:
         mock_load_config.return_value = mock_config
 
         # Mock asyncio.run calls - should fail due to no smartapi_ids
-        def mock_run_side_effect(coro):
+        def mock_run_side_effect(_coro):
             # First call is get_merged_mcp_server - should fail
-            raise ValueError("No SmartAPI IDs provided or found with the given query.")
+            error_msg = "No SmartAPI IDs provided or found with the given query."
+            raise ValueError(error_msg)
 
         mock_asyncio.run.side_effect = mock_run_side_effect
 
@@ -484,9 +537,16 @@ class TestCLIEdgeCases:
     @patch("smartapi_mcp.cli.get_merged_mcp_server")
     @patch("smartapi_mcp.cli.get_all_counts")
     @patch("smartapi_mcp.cli.load_config")
-    @patch("sys.argv", ["smartapi-mcp", "--transport", "invalid", "--smartapi_id", "test_id"])
+    @patch(
+        "sys.argv",
+        ["smartapi-mcp", "--transport", "invalid", "--smartapi_id", "test_id"],
+    )
     def test_invalid_mode_still_runs_stdio(
-        self, mock_load_config, mock_get_counts, mock_get_server, mock_asyncio
+        self,
+        mock_load_config,
+        mock_get_all_counts,
+        mock_get_merged_mcp_server,
+        mock_asyncio,
     ):
         """Test that invalid transport mode defaults to stdio."""
         # Setup config mock
@@ -507,7 +567,7 @@ class TestCLIEdgeCases:
         call_count = [0]
 
         # Mock asyncio.run calls
-        def mock_run_side_effect(coro):
+        def mock_run_side_effect(_coro):
             call_count[0] += 1
             if call_count[0] == 1:
                 # First call is get_merged_mcp_server
@@ -515,7 +575,7 @@ class TestCLIEdgeCases:
             if call_count[0] == 2:
                 # Second call is get_all_counts
                 return (1, 3, 2, 1)
-            return coro
+            return None
 
         mock_asyncio.run.side_effect = mock_run_side_effect
 

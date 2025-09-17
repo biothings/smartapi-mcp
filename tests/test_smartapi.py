@@ -6,7 +6,13 @@ from unittest.mock import patch
 
 import pytest
 
-from smartapi_mcp import get_base_server_url, get_smartapi_ids, load_api_spec
+from smartapi_mcp.smartapi import (
+    PREDEFINED_API_SETS,
+    get_base_server_url,
+    get_predefined_api_set,
+    get_smartapi_ids,
+    load_api_spec,
+)
 
 test_api_id = "59dce17363dce279d389100834e43648"  # MyGene.info
 
@@ -169,3 +175,91 @@ def test_load_api_spec_validation_success(mock_logger, mock_validate, mock_load)
     # Verify result and no warning
     assert result == mock_spec
     mock_logger.warning.assert_not_called()
+
+
+def test_get_predefined_api_set_biothings_core():
+    """Test get_predefined_api_set with biothings_core set."""
+    result = get_predefined_api_set("biothings_core")
+
+    assert "smartapi_ids" in result
+    assert isinstance(result["smartapi_ids"], list)
+    assert len(result["smartapi_ids"]) == 4
+    # Verify the core APIs are included
+    expected_ids = [
+        "59dce17363dce279d389100834e43648",  # MyGene.info
+        "09c8782d9f4027712e65b95424adba79",  # MyVariant.info
+        "8f08d1446e0bb9c2b323713ce83e2bd3",  # MyChem.info
+        "671b45c0301c8624abbd26ae78449ca2",  # MyDisease.info
+    ]
+    for expected_id in expected_ids:
+        assert expected_id in result["smartapi_ids"]
+
+
+def test_get_predefined_api_set_biothings_test():
+    """Test get_predefined_api_set with biothings_test set."""
+
+    result = get_predefined_api_set("biothings_test")
+
+    assert "smartapi_ids" in result
+    assert isinstance(result["smartapi_ids"], list)
+    assert len(result["smartapi_ids"]) == 5
+    # Verify the test APIs are included (core + SemmedDB)
+    expected_ids = [
+        "59dce17363dce279d389100834e43648",  # MyGene.info
+        "09c8782d9f4027712e65b95424adba79",  # MyVariant.info
+        "8f08d1446e0bb9c2b323713ce83e2bd3",  # MyChem.info
+        "671b45c0301c8624abbd26ae78449ca2",  # MyDisease.info
+        "1d288b3a3caf75d541ffaae3aab386c8",  # SemmedDB
+    ]
+    for expected_id in expected_ids:
+        assert expected_id in result["smartapi_ids"]
+
+
+def test_get_predefined_api_set_biothings_all():
+    """Test get_predefined_api_set with biothings_all set."""
+
+    result = get_predefined_api_set("biothings_all")
+
+    assert "smartapi_q" in result
+    assert "smartapi_exclude_ids" in result
+    assert isinstance(result["smartapi_q"], str)
+    assert isinstance(result["smartapi_exclude_ids"], list)
+
+    # Verify the query string
+    expected_query = (
+        "_status.uptime_status:pass AND tags.name=biothings AND NOT tags.name=trapi"
+    )
+    assert result["smartapi_q"] == expected_query
+
+    # Verify exclusion list
+    expected_exclusions = [
+        "1c9be9e56f93f54192dcac203f21c357",  # BioThings mabs API
+        "5a4c41bf2076b469a0e9cfcf2f2b8f29",  # Translator Annotation Service
+        "cc857d5b7c8b7609b5bbb38ff990bfff",  # GO Biological Process API
+        "f339b28426e7bf72028f60feefcd7465",  # GO Cellular Component API
+        "34bad236d77bea0a0ee6c6cba5be54a6",  # GO Molecular Function API
+    ]
+    assert len(result["smartapi_exclude_ids"]) == 5
+    for expected_id in expected_exclusions:
+        assert expected_id in result["smartapi_exclude_ids"]
+
+
+def test_get_predefined_api_set_unknown_set():
+    """Test get_predefined_api_set raises ValueError for unknown set."""
+    with pytest.raises(ValueError, match="Unknown API set: unknown_set"):
+        get_predefined_api_set("unknown_set")
+
+
+def test_get_predefined_api_set_empty_string():
+    """Test get_predefined_api_set raises ValueError for empty string."""
+    with pytest.raises(ValueError, match="Unknown API set: "):
+        get_predefined_api_set("")
+
+
+def test_predefined_api_sets_constant():
+    """Test that PREDEFINED_API_SETS constant contains expected values."""
+    expected_sets = ["biothings_core", "biothings_test", "biothings_all"]
+    assert isinstance(PREDEFINED_API_SETS, list)
+    assert len(PREDEFINED_API_SETS) == 3
+    for expected_set in expected_sets:
+        assert expected_set in PREDEFINED_API_SETS
