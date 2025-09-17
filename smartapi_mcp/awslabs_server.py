@@ -318,26 +318,27 @@ async def create_mcp_server(config: Config) -> FastMCP:
     # Get the actual tools from the server's internal structure
     tool_count = 0
     tool_names = []
+    tools = None
 
     # Try different ways to access tools based on FastMCP implementation
-    if hasattr(server, "list_tools"):
+    if hasattr(server, "get_tools"):
         try:
             # Use asyncio to run the async method in a synchronous context
             # tools = asyncio.run(server.list_tools())  # type: ignore
-            tools = await server.list_tools()
+            tools = await server.get_tools()
             tool_count = len(tools)
-            tool_names = [tool.get("name") for tool in tools]
+            tool_names = list(tools)
 
             # DEBUG - Log detailed information about each tool
-            logger.debug(f"Found {tool_count} tools via list_tools()")
-            for i, tool in enumerate(tools):
-                tool_name = tool.get("name", "unknown")
-                tool_desc = tool.get("description", "no description")
+            logger.debug(f"Found {tool_count} tools via get_tools()")
+            for i, tool in enumerate(tools.values()):
+                tool_name = getattr(tool, "name", "unknown")
+                tool_desc = getattr(tool, "description", "no description")
                 logger.debug(f"Tool {i}: {tool_name} - {tool_desc}")
 
                 # Check if the tool has a schema
-                if "parameters" in tool:
-                    params = tool.get("parameters", {})
+                if hasattr(tool, "parameters"):
+                    params = getattr(tool, "parameters", {})
                     if "properties" in params:
                         properties = params.get("properties", {})
                         logger.debug(f"  Parameters: {list(properties.keys())}")
@@ -346,13 +347,6 @@ async def create_mcp_server(config: Config) -> FastMCP:
             import traceback
 
             logger.debug(f"Tool listing error traceback: {traceback.format_exc()}")
-
-    # DEBUG - Try to access tools directly if available
-    tools = getattr(server, "_tools", {})
-    if tools:
-        logger.debug(f"Server has {len(tools)} tools in _tools attribute")
-        for tool_name, tool in tools.items():
-            logger.debug(f"Direct tool: {tool_name}")
 
     # Log the prompt count
     prompt_count = (

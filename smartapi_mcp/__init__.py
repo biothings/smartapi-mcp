@@ -19,7 +19,7 @@ try:
         "get_merged_mcp_server",
         "get_smartapi_ids",
         "load_api_spec",
-        "merge_mcp_server",
+        "merge_mcp_servers",
     ]
 except ImportError:
     # Dependencies not available, only export version info
