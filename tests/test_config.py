@@ -117,10 +117,9 @@ class TestLoadConfig:
 
         # Test that environment variables were loaded
         assert config.smartapi_id == "env_test_id"
-        assert (
-            config.smartapi_ids == "id1,id2"
-        )  # Note: still string, not parsed as list
-        assert config.smartapi_exclude_ids == "exclude1,exclude2"
+        # Environment variables are parsed as lists from comma-separated strings
+        assert config.smartapi_ids == ["id1", "id2"]
+        assert config.smartapi_exclude_ids == ["exclude1", "exclude2"]
         assert config.smartapi_q == "env test query"
         assert config.smartapi_api_set == "biothings_core"
         assert config.server_name == "env_server"

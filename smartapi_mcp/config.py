@@ -26,8 +26,10 @@ def load_config(args: Any = None) -> Config:
     # define the following SmartAPI-specific environment variables
     env_vars = {
         "SMARTAPI_ID": (lambda v: setattr(config, "smartapi_id", v)),
-        "SMARTAPI_IDS": (lambda v: setattr(config, "smartapi_ids", v)),
-        "SMARTAPI_EXCLUDE_IDS": (lambda v: setattr(config, "smartapi_exclude_ids", v)),
+        "SMARTAPI_IDS": (lambda v: setattr(config, "smartapi_ids", v.split(","))),
+        "SMARTAPI_EXCLUDE_IDS": (
+            lambda v: setattr(config, "smartapi_exclude_ids", v.split(","))
+        ),
         "SMARTAPI_Q": (lambda v: setattr(config, "smartapi_q", v)),
         "SMARTAPI_API_SET": (lambda v: setattr(config, "smartapi_api_set", v)),
         "SERVER_NAME": (lambda v: setattr(config, "server_name", v)),
@@ -52,15 +54,23 @@ def load_config(args: Any = None) -> Config:
         if hasattr(args, "smartapi_id") and args.smartapi_id:
             logger.debug(f"Setting SmartAPI id from arguments: {args.smartapi_id}")
             config.smartapi_id = args.smartapi_id
-        if hasattr(args, "smartapi_ids") and args.smartapi_id:
+        if hasattr(args, "smartapi_ids") and args.smartapi_ids:
             logger.debug(f"Setting SmartAPI ids from arguments: {args.smartapi_ids}")
-            config.smartapi_ids = args.smartapi_ids
-        if hasattr(args, "smartapi_exclude_ids") and args.smartapi_id:
+            # smartapi_ids from arguments is comma-separated
+            if isinstance(args.smartapi_ids, str):
+                config.smartapi_ids = args.smartapi_ids.split(",")
+            else:
+                config.smartapi_ids = args.smartapi_ids
+        if hasattr(args, "smartapi_exclude_ids") and args.smartapi_exclude_ids:
             logger.debug(
                 "Setting excluded SmartAPI ids from arguments: {}",
                 args.smartapi_exclude_ids,
             )
-            config.smartapi_exclude_ids = args.smartapi_exclude_ids
+            # smartapi_exclude_ids from arguments is comma-separated
+            if isinstance(args.smartapi_exclude_ids, str):
+                config.smartapi_exclude_ids = args.smartapi_exclude_ids.split(",")
+            else:
+                config.smartapi_exclude_ids = args.smartapi_exclude_ids
         if hasattr(args, "smartapi_q") and args.smartapi_q:
             logger.debug(f"Setting SmartAPI query from arguments: {args.smartapi_q}")
             config.smartapi_q = args.smartapi_q
