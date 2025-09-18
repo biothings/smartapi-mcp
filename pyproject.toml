@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "smartapi-mcp"
-version = "0.1.0"
+version = "0.1.1"
 description = "Create MCP servers for one or multiple APIs registered in SmartAPI registry"
 readme = "README.md"
 license = {text = "Apache-2.0"}
