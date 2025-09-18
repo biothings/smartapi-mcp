@@ -55,6 +55,250 @@ cd smartapi-mcp
 pip install -e ".[dev]"
 ```
 
+## Using with MCP Clients
+
+### Using with uvx (Recommended)
+
+[uvx](https://github.com/astral-sh/uv) is a tool for running Python applications in isolated environments. This is the recommended way to run smartapi-mcp for MCP client integration:
+
+#### Installation and Basic Usage
+
+```bash
+# Install uvx if you haven't already
+curl -LsSf https://astral.sh/uv/install.sh | sh
+# or with homebrew on macOS
+brew install uv
+
+# Run smartapi-mcp with uvx (automatically installs if needed)
+uvx smartapi-mcp --api_set biothings_core
+
+# Run with specific version
+uvx smartapi-mcp@0.1.0 --api_set biothings_core
+
+# Run with additional arguments
+uvx smartapi-mcp --smartapi_id 59dce17363dce279d389100834e43648 --server_name "MyGene MCP Server"
+```
+
+#### Using with Claude Desktop
+
+To use smartapi-mcp with Claude Desktop, add the following configuration to your Claude Desktop configuration file:
+
+**macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+
+**Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+
+```json
+{
+  "mcpServers": {
+    "smartapi-biothings-core": {
+      "command": "uvx",
+      "args": ["smartapi-mcp", "--api_set", "biothings_core", "--server_name", "BioThings Core APIs"]
+    },
+    "smartapi-mygene": {
+      "command": "uvx",
+      "args": ["smartapi-mcp", "--smartapi_id", "59dce17363dce279d389100834e43648", "--server_name", "MyGene.info API"]
+    },
+    "smartapi-myvariant": {
+      "command": "uvx",
+      "args": ["smartapi-mcp", "--smartapi_id", "09c8782d9f4027712e65b95424adba79", "--server_name", "MyVariant.info API"]
+    }
+  }
+}
+```
+
+#### Using with Other MCP Clients
+
+For other MCP clients that support external MCP servers, you can typically configure them by providing:
+
+- **Command**: `uvx`
+- **Arguments**: `["smartapi-mcp", "--api_set", "biothings_core"]` (or other desired arguments)
+- **Working Directory**: Optional, can be any directory
+- **Environment Variables**: Optional, see [Environment Variables](#environment-variables) section
+
+### MCP Server Configuration Examples
+
+#### Basic Bioinformatics Setup
+
+```json
+{
+  "mcpServers": {
+    "biothings-core": {
+      "command": "uvx",
+      "args": ["smartapi-mcp", "--api_set", "biothings_core"],
+      "env": {
+        "LOG_LEVEL": "INFO"
+      }
+    }
+  }
+}
+```
+
+#### Advanced Multi-API Setup
+
+```json
+{
+  "mcpServers": {
+    "biothings-comprehensive": {
+      "command": "uvx",
+      "args": [
+        "smartapi-mcp",
+        "--smartapi_ids",
+        "59dce17363dce279d389100834e43648,09c8782d9f4027712e65b95424adba79,8f08d1446e0bb9c2b323713ce83e2bd3",
+        "--server_name",
+        "Comprehensive Bioinformatics APIs",
+        "--log-level",
+        "DEBUG"
+      ]
+    }
+  }
+}
+```
+
+#### Development/Testing Setup
+
+```json
+{
+  "mcpServers": {
+    "smartapi-dev": {
+      "command": "uvx",
+      "args": [
+        "smartapi-mcp",
+        "--api_set",
+        "biothings_test",
+        "--log-level",
+        "DEBUG"
+      ],
+      "env": {
+        "SMARTAPI_LOG_LEVEL": "DEBUG"
+      }
+    }
+  }
+}
+```
+
+### Environment Variables for MCP Configuration
+
+You can also use environment variables in your MCP client configuration:
+
+```json
+{
+  "mcpServers": {
+    "smartapi-configured": {
+      "command": "uvx",
+      "args": ["smartapi-mcp"],
+      "env": {
+        "SMARTAPI_API_SET": "biothings_core",
+        "SERVER_NAME": "BioThings Core MCP Server",
+        "LOG_LEVEL": "INFO"
+      }
+    }
+  }
+}
+```
+
+### Alternative Installation Methods for MCP Clients
+
+#### Using pip in a Virtual Environment
+
+If you prefer not to use uvx, you can create a dedicated virtual environment:
+
+```bash
+# Create and activate virtual environment
+python -m venv smartapi-mcp-env
+source smartapi-mcp-env/bin/activate  # On Windows: smartapi-mcp-env\Scripts\activate
+
+# Install smartapi-mcp
+pip install smartapi-mcp
+
+# Test the installation
+smartapi-mcp --api_set biothings_core
+```
+
+Then configure your MCP client to use the full path to the executable:
+
+```json
+{
+  "mcpServers": {
+    "smartapi-biothings": {
+      "command": "/path/to/smartapi-mcp-env/bin/smartapi-mcp",
+      "args": ["--api_set", "biothings_core"]
+    }
+  }
+}
+```
+
+#### Using System-wide Installation
+
+```bash
+# Install globally (not recommended for most users)
+pip install smartapi-mcp
+
+# Find the installation path
+which smartapi-mcp
+```
+
+MCP client configuration:
+
+```json
+{
+  "mcpServers": {
+    "smartapi-biothings": {
+      "command": "smartapi-mcp",
+      "args": ["--api_set", "biothings_core"]
+    }
+  }
+}
+```
+
+### Troubleshooting MCP Client Integration
+
+#### Server Not Starting
+
+1. **Check uvx installation**:
+   ```bash
+   uvx --version
+   ```
+
+2. **Test server manually**:
+   ```bash
+   uvx smartapi-mcp --api_set biothings_core --log-level DEBUG
+   ```
+
+3. **Check MCP client logs** for specific error messages
+
+#### Tools Not Appearing in Client
+
+1. **Verify server is running** with tools registered:
+   ```bash
+   uvx smartapi-mcp --api_set biothings_core --log-level DEBUG 2>&1 | grep -i "tool"
+   ```
+
+2. **Check API connectivity**:
+   ```bash
+   curl -s https://mygene.info/v3/metadata | head -20
+   ```
+
+3. **Try a smaller API set** first:
+   ```bash
+   uvx smartapi-mcp --smartapi_id 59dce17363dce279d389100834e43648
+   ```
+
+#### Performance Issues
+
+- Use specific SmartAPI IDs instead of large API sets
+- Enable only the APIs you actually need
+- Consider using HTTP transport for better performance with multiple concurrent requests:
+  ```json
+  {
+    "mcpServers": {
+      "smartapi-http": {
+        "command": "uvx",
+        "args": ["smartapi-mcp", "--api_set", "biothings_core", "--transport", "http", "--port", "8001"]
+      }
+    }
+  }
+  ```
+
 ## Quick Start
 
 ### Command Line Usage
