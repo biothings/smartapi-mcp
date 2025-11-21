@@ -34,8 +34,10 @@ async def merge_mcp_servers(
     list_of_servers: list[FastMCP], merged_name: str = "merged_mcp"
 ) -> FastMCP:
     """
-    Merges a list of FastMCP instances into a single FastMCP instance by combining their
-    tools, prefixing tool names with the server's name (API name) to avoid conflicts.
+    Merges a list of FastMCP instances into
+    a single FastMCP instance by combining their
+    tools, prefixing tool names with the server's
+    name (API name) to avoid conflicts.
 
     Args:
         list_of_servers: List of FastMCP instances to merge.
@@ -50,7 +52,7 @@ async def merge_mcp_servers(
         api_name = re.sub(
             r"[^a-z0-9_-]", "_", getattr(server, "name", "unknown_api").lower()
         )
-        
+
         tools = await server.get_tools()
         if tools:
             for original_name, tool in tools.items():
@@ -63,7 +65,7 @@ async def merge_mcp_servers(
         else:
             err_msg = f"Server {server} does not have accessible tools."
             raise AttributeError(err_msg)
-        
+
         # Merge prompts
         prompts = await server.get_prompts()
         if prompts:
