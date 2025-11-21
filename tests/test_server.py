@@ -234,12 +234,14 @@ async def test_merge_mcp_servers_special_characters_in_name():
     mock_tool1 = MagicMock()
     mock_tool1.name = "original_tool_1"
     mock_server1.get_tools = AsyncMock(return_value={"tool1": mock_tool1})
+    mock_server1.get_prompts = AsyncMock(return_value={})
 
     mock_server2 = MagicMock()
     mock_server2.name = "API-with-dashes_and_underscores"
     mock_tool2 = MagicMock()
     mock_tool2.name = "original_tool_2"
     mock_server2.get_tools = AsyncMock(return_value={"tool2": mock_tool2})
+    mock_server2.get_prompts = AsyncMock(return_value={})
 
     merged_server = await merge_mcp_servers([mock_server1, mock_server2])
 
