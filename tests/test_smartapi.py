@@ -183,13 +183,14 @@ def test_get_predefined_api_set_biothings_core():
 
     assert "smartapi_ids" in result
     assert isinstance(result["smartapi_ids"], list)
-    assert len(result["smartapi_ids"]) == 4
+    assert len(result["smartapi_ids"]) == 5
     # Verify the core APIs are included
     expected_ids = [
         "59dce17363dce279d389100834e43648",  # MyGene.info
         "09c8782d9f4027712e65b95424adba79",  # MyVariant.info
         "8f08d1446e0bb9c2b323713ce83e2bd3",  # MyChem.info
         "671b45c0301c8624abbd26ae78449ca2",  # MyDisease.info
+        "85139f4dccfcefa3ac3042372066916d",  # MyGeneSet
     ]
     for expected_id in expected_ids:
         assert expected_id in result["smartapi_ids"]
