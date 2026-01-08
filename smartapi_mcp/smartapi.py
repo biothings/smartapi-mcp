@@ -80,7 +80,7 @@ def get_predefined_api_set(api_set: str) -> dict:
                 "09c8782d9f4027712e65b95424adba79",  # MyVariant.info
                 "8f08d1446e0bb9c2b323713ce83e2bd3",  # MyChem.info
                 "671b45c0301c8624abbd26ae78449ca2",  # MyDisease.info
-                "85139f4dccfcefa3ac3042372066916d",  # MyGeneSet
+                "85139f4dccfcefa3ac3042372066916d",  # MyGeneSet.info
             ]
         }
     if api_set == "biothings_test":
@@ -91,6 +91,7 @@ def get_predefined_api_set(api_set: str) -> dict:
                 "09c8782d9f4027712e65b95424adba79",  # MyVariant.info
                 "8f08d1446e0bb9c2b323713ce83e2bd3",  # MyChem.info
                 "671b45c0301c8624abbd26ae78449ca2",  # MyDisease.info
+                "85139f4dccfcefa3ac3042372066916d",  # MyGeneSet.info
                 "1d288b3a3caf75d541ffaae3aab386c8",  # SemmedDB
             ]
         }

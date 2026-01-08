@@ -306,7 +306,7 @@ MCP client configuration:
 #### Start with a predefined API set (recommended)
 
 ```bash
-# Use BioThings core APIs (MyGene, MyVariant, MyChem, MyDisease)
+# Use BioThings core APIs (MyGene, MyVariant, MyChem, MyDisease, MyGeneSet)
 smartapi-mcp --api_set biothings_core
 
 # Use all BioThings APIs (with some exclusions)
@@ -414,6 +414,7 @@ When you use `--api_set biothings_core`, you get access to these powerful bioinf
 2. **MyVariant.info** (`09c8782d9f4027712e65b95424adba79`): Variant annotation and information  
 3. **MyChem.info** (`8f08d1446e0bb9c2b323713ce83e2bd3`): Chemical and drug information
 4. **MyDisease.info** (`671b45c0301c8624abbd26ae78449ca2`): Disease information and associations
+4. **MyGeneSet.info** (`85139f4dccfcefa3ac3042372066916d`): Collect, share and save genes
 
 ### Usage with MCP Clients
 
@@ -456,7 +457,7 @@ All configuration can be provided via command line arguments (see Quick Start se
 
 The following predefined API sets are available:
 
-- **`biothings_core`**: Core BioThings APIs (MyGene, MyVariant, MyChem, MyDisease)
+- **`biothings_core`**: Core BioThings APIs (MyGene, MyVariant, MyChem, MyDisease, MyGeneSet)
 - **`biothings_test`**: Core APIs plus SemmedDB (useful for testing)
 - **`biothings_all`**: All BioThings APIs (with some exclusions for stability)
 

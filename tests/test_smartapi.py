@@ -190,7 +190,7 @@ def test_get_predefined_api_set_biothings_core():
         "09c8782d9f4027712e65b95424adba79",  # MyVariant.info
         "8f08d1446e0bb9c2b323713ce83e2bd3",  # MyChem.info
         "671b45c0301c8624abbd26ae78449ca2",  # MyDisease.info
-        "85139f4dccfcefa3ac3042372066916d",  # MyGeneSet
+        "85139f4dccfcefa3ac3042372066916d",  # MyGeneSet.info
     ]
     for expected_id in expected_ids:
         assert expected_id in result["smartapi_ids"]
