@@ -42,6 +42,7 @@ dev = [
     "ruff>=0.1.0",
     "build>=0.8.0",
     "twine>=4.0.0",
+    "fastmcp<2.14",
 ]
 test = [
     "pytest>=7.0.0",
