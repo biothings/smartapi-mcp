@@ -9,10 +9,9 @@ import asyncio
 import sys
 import traceback
 
-from awslabs.openapi_mcp_server import logger
-from awslabs.openapi_mcp_server.server import setup_signal_handlers
+from awslabs.openapi_mcp_server import get_format, logger
+from awslabs.openapi_mcp_server.server import get_all_counts, setup_signal_handlers
 
-from .awslabs_server import get_all_counts
 from .config import load_config
 from .server import get_merged_mcp_server
 
@@ -75,7 +74,7 @@ def main():
 
     # Set up logging with loguru at specified level
     logger.remove()
-    logger.add(lambda msg: print(msg, end=""), level=args.log_level)
+    logger.add(sys.stderr, format=get_format(), level=args.log_level)
     logger.info(f"Starting server with logging level: {args.log_level}")
 
     # Load configuration

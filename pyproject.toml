@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "smartapi-mcp"
-version = "0.1.1"
+version = "0.2.0"
 description = "Create MCP servers for one or multiple APIs registered in SmartAPI registry"
 readme = "README.md"
 license = {text = "Apache-2.0"}
@@ -15,7 +15,7 @@ maintainers = [
     {name = "BioThings Team", email = "help@biothings.io"}
 ]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
@@ -31,7 +31,7 @@ classifiers = [
 keywords = ["mcp", "smartapi", "api", "server", "bioinformatics"]
 requires-python = ">=3.10"
 dependencies = [
-    "awslabs_openapi_mcp_server>=0.2.4",
+    "awslabs_openapi_mcp_server>=0.2.12",
 ]
 
 [project.optional-dependencies]
@@ -42,7 +42,6 @@ dev = [
     "ruff>=0.1.0",
     "build>=0.8.0",
     "twine>=4.0.0",
-    "fastmcp<2.14",
 ]
 test = [
     "pytest>=7.0.0",

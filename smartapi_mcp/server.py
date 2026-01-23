@@ -8,9 +8,9 @@ import re
 
 from awslabs.openapi_mcp_server import logger
 from awslabs.openapi_mcp_server.api.config import Config
+from awslabs.openapi_mcp_server.server import create_mcp_server_async
 from fastmcp import FastMCP
 
-from .awslabs_server import create_mcp_server
 from .smartapi import (
     get_base_server_url,
     get_predefined_api_set,
@@ -27,7 +27,7 @@ async def get_mcp_server(smartapi_id: str) -> FastMCP:
     base_server_url = get_base_server_url(openapi_spec)
     config.api_base_url = base_server_url
 
-    return await create_mcp_server(config)
+    return await create_mcp_server_async(config)
 
 
 async def merge_mcp_servers(
