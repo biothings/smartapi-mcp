@@ -15,6 +15,19 @@ class Config(_config.Config):
     smartapi_q: str = ""
     smartapi_api_set: str = ""
     server_name: str = "smartapi-mcp"
+    smart_routing: bool = False
+    max_context_tools: int = 50
+
+
+def _parse_bool(value: str) -> bool:
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _parse_int(value: str, default: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def load_config(args: Any = None) -> Config:
@@ -32,6 +45,12 @@ def load_config(args: Any = None) -> Config:
         ),
         "SMARTAPI_Q": (lambda v: setattr(config, "smartapi_q", v)),
         "SMARTAPI_API_SET": (lambda v: setattr(config, "smartapi_api_set", v)),
+        "SMARTAPI_ROUTING": (
+            lambda v: setattr(config, "smart_routing", _parse_bool(v))
+        ),
+        "MAX_CONTEXT_TOOLS": (
+            lambda v: setattr(config, "max_context_tools", _parse_int(v, 50))
+        ),
         "SERVER_NAME": (lambda v: setattr(config, "server_name", v)),
     }
 
@@ -83,6 +102,10 @@ def load_config(args: Any = None) -> Config:
         if hasattr(args, "server_name") and args.server_name:
             logger.debug(f"Setting MCP Server name from arguments: {args.server_name}")
             config.server_name = args.server_name
+        if hasattr(args, "smart_routing"):
+            config.smart_routing = bool(args.smart_routing)
+        if hasattr(args, "max_context_tools") and args.max_context_tools:
+            config.max_context_tools = int(args.max_context_tools)
         if hasattr(args, "transport") and args.transport:
             logger.debug(
                 f"Setting MCP Server transport mode from arguments: {args.transport}"

@@ -13,9 +13,10 @@ from awslabs.openapi_mcp_server.utils.openapi import load_openapi_spec
 from awslabs.openapi_mcp_server.utils.openapi_validator import validate_openapi_spec
 
 smartapi_query_url = "https://smart-api.info/api/query?q={q}&fields=_id&size=500&raw=1"
+smartapi_spec_url = "https://smart-api.info/api/metadata/{smartapi_id}"
 
 
-async def get_smartapi_ids(q: str) -> list:
+async def get_smartapi_ids(q: str) -> list[str]:
     """Give a query string, return a list of SmartAPI IDs matching the query."""
     _url = smartapi_query_url.format(q=q)
 
@@ -32,7 +33,7 @@ async def get_smartapi_ids(q: str) -> list:
 
 def load_api_spec(smartapi_id: str) -> dict:
     config = Config(
-        api_spec_url=f"https://smart-api.info/api/metadata/{smartapi_id}",
+        api_spec_url=smartapi_spec_url.format(smartapi_id=smartapi_id),
     )
     api_spec = load_openapi_spec(url=config.api_spec_url)
 

@@ -11,17 +11,22 @@ from awslabs.openapi_mcp_server.api.config import Config
 from awslabs.openapi_mcp_server.server import create_mcp_server_async
 from fastmcp import FastMCP
 
+# Import router functions
+from .router import create_progressive_server, create_smart_router_server
+
+# Import from smartapi module - avoiding circular imports
 from .smartapi import (
     get_base_server_url,
     get_predefined_api_set,
     get_smartapi_ids,
     load_api_spec,
+    smartapi_spec_url,
 )
 
 
 async def get_mcp_server(smartapi_id: str) -> FastMCP:
     config = Config(
-        api_spec_url=f"https://smart-api.info/api/metadata/{smartapi_id}",
+        api_spec_url=smartapi_spec_url.format(smartapi_id=smartapi_id),
     )
     openapi_spec = load_api_spec(smartapi_id)
     base_server_url = get_base_server_url(openapi_spec)
@@ -119,3 +124,72 @@ async def get_merged_mcp_server(
     merged_server = await merge_mcp_servers(list_of_servers, server_name)
     logger.info(f"Merged {len(list_of_servers)} APIs into one MCP server.")
     return merged_server
+
+
+async def get_smart_mcp_server_with_routing(
+    smartapi_q: str | None = None,
+    smartapi_id: str | None = None,
+    smartapi_ids: list[str] | None = None,
+    smartapi_exclude_ids: list[str] | None = None,
+    api_set: str | None = None,
+    server_name: str = "smartapi_mcp",
+    *,
+    smart_routing: bool = False,
+    max_context_tools: int = 50,
+) -> FastMCP:
+    """Smart MCP server with intelligent routing and progressive loading"""
+    logger.debug(
+        "Creating smart MCP server: routing=%s, max_tools=%s",
+        smart_routing,
+        max_context_tools,
+    )
+
+    # Resolve API IDs from various sources
+    if api_set:
+        api_set_args = get_predefined_api_set(api_set)
+        if "smartapi_ids" in api_set_args:
+            smartapi_ids = api_set_args["smartapi_ids"]
+        if "smartapi_q" in api_set_args:
+            smartapi_q = api_set_args["smartapi_q"]
+        if "smartapi_exclude_ids" in api_set_args:
+            smartapi_exclude_ids = api_set_args["smartapi_exclude_ids"]
+
+    if smartapi_q:
+        smartapi_ids = await get_smartapi_ids(smartapi_q)
+
+    if smartapi_id:
+        smartapi_ids = [smartapi_id]
+
+    if not smartapi_ids:
+        err_msg = "No SmartAPI IDs provided or found with the given query."
+        raise ValueError(err_msg)
+
+    smartapi_exclude_ids = smartapi_exclude_ids or []
+    available_ids = [sid for sid in smartapi_ids if sid not in smartapi_exclude_ids]
+
+    large_api_threshold = 50
+    medium_api_threshold = 10
+
+    # Use smart routing for large API sets
+    if smart_routing and len(available_ids) >= large_api_threshold:
+        logger.info("🔍 Using smart routing for large API set")
+        return await create_smart_router_server(
+            available_ids, server_name, max_context_tools
+        )
+
+    # Use progressive loading for medium sets
+    if len(available_ids) >= medium_api_threshold:
+        logger.info("📦 Using progressive loading for medium API set")
+        return await create_progressive_server(
+            available_ids, server_name, max_context_tools
+        )
+
+    # Default to full loading for small sets
+    logger.info("🔧 Using full loading for small API set")
+    return await get_merged_mcp_server(
+        smartapi_q=smartapi_q,
+        smartapi_ids=available_ids,
+        smartapi_exclude_ids=smartapi_exclude_ids,
+        api_set=api_set,
+        server_name=server_name,
+    )

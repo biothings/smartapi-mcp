@@ -13,7 +13,10 @@ from awslabs.openapi_mcp_server import get_format, logger
 from awslabs.openapi_mcp_server.server import get_all_counts, setup_signal_handlers
 
 from .config import load_config
-from .server import get_merged_mcp_server
+from .server import (
+    get_merged_mcp_server,
+    get_smart_mcp_server_with_routing,
+)
 
 
 def main():
@@ -64,6 +67,17 @@ def main():
         help='The name of the MCP server, default is "smartapi_mcp".',
     )
     parser.add_argument(
+        "--smart-routing",
+        action="store_true",
+        help="Enable smart routing for large API sets (recommended for 50+ APIs)",
+    )
+    parser.add_argument(
+        "--max-context-tools",
+        type=int,
+        default=50,
+        help="Maximum number of tools to load at once (default: 50)",
+    )
+    parser.add_argument(
         "--log-level",
         choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
         default="INFO",
@@ -80,18 +94,38 @@ def main():
     # Load configuration
     logger.debug("Loading configuration from arguments and environment")
     config = load_config(args)
+
+    # Add smart routing config
+    config.smart_routing = getattr(args, "smart_routing", False)
+    config.max_context_tools = getattr(args, "max_context_tools", 50)
+
     logger.debug("Configuration loaded.")
 
-    merged_server = asyncio.run(
-        get_merged_mcp_server(
-            smartapi_q=config.smartapi_q,
-            smartapi_id=config.smartapi_id,
-            smartapi_ids=config.smartapi_ids,
-            smartapi_exclude_ids=config.smartapi_exclude_ids,
-            api_set=config.smartapi_api_set,
-            server_name=config.server_name,
+    # Use smart routing if enabled
+    if getattr(config, "smart_routing", False):
+        merged_server = asyncio.run(
+            get_smart_mcp_server_with_routing(
+                smartapi_q=config.smartapi_q,
+                smartapi_id=config.smartapi_id,
+                smartapi_ids=config.smartapi_ids,
+                smartapi_exclude_ids=config.smartapi_exclude_ids,
+                api_set=config.smartapi_api_set,
+                server_name=config.server_name,
+                smart_routing=getattr(config, "smart_routing", False),
+                max_context_tools=getattr(config, "max_context_tools", 50),
+            )
         )
-    )
+    else:
+        merged_server = asyncio.run(
+            get_merged_mcp_server(
+                smartapi_q=config.smartapi_q,
+                smartapi_id=config.smartapi_id,
+                smartapi_ids=config.smartapi_ids,
+                smartapi_exclude_ids=config.smartapi_exclude_ids,
+                api_set=config.smartapi_api_set,
+                server_name=config.server_name,
+            )
+        )
 
     # Set up signal handlers
     setup_signal_handlers()
