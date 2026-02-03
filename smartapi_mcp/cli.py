@@ -6,11 +6,13 @@ Provides CLI commands for running and managing the SmartAPI MCP server.
 
 import argparse
 import asyncio
+import signal
 import sys
 import traceback
 
 from awslabs.openapi_mcp_server import get_format, logger
-from awslabs.openapi_mcp_server.server import get_all_counts, setup_signal_handlers
+from awslabs.openapi_mcp_server.server import get_all_counts
+from awslabs.openapi_mcp_server.utils.metrics_provider import metrics
 
 from .config import load_config
 from .server import (
@@ -127,8 +129,8 @@ def main():
             )
         )
 
-    # Set up signal handlers
-    setup_signal_handlers()
+    # Set up signal handlers (local implementation avoids sys.exit in handler)
+    _setup_signal_handlers()
 
     try:
         prompt_count, tool_count, resource_count, resource_template_count = asyncio.run(
@@ -166,6 +168,38 @@ def main():
     # Otherwise run server with stdio transport by default
     logger.info("Running server with stdio transport")
     merged_server.run()
+
+
+def _setup_signal_handlers() -> None:
+    """
+    Set up signal handlers for graceful shutdown without sys.exit.
+    Modified from awslabs.openapi_mcp_server.server.setup_signal_handlers
+    Original version calls sys.exit in the handler which can cause issues.
+    """
+    handled = {"done": False}
+
+    def _handler(sig, frame):  # noqa: ARG001
+        if handled["done"]:
+            return
+        handled["done"] = True
+
+        logger.debug("Received signal %s, shutting down gracefully...", sig)
+
+        # Log final metrics
+        summary = metrics.get_summary()
+        logger.info(f"Final metrics: {summary}")
+
+        if sig == signal.SIGINT:
+            logger.info("Process Interrupted, Shutting down gracefully...")
+
+        logger.info("Shutdown complete.")
+
+        # Restore default handler and re-raise signal to let runtime unwind cleanly
+        signal.signal(sig, signal.SIG_DFL)
+        signal.raise_signal(sig)
+
+    signal.signal(signal.SIGTERM, _handler)
+    signal.signal(signal.SIGINT, _handler)
 
 
 if __name__ == "__main__":
