@@ -15,10 +15,7 @@ from awslabs.openapi_mcp_server.server import get_all_counts
 from awslabs.openapi_mcp_server.utils.metrics_provider import metrics
 
 from .config import load_config
-from .server import (
-    get_merged_mcp_server,
-    get_smart_mcp_server_with_routing,
-)
+from .server import get_merged_mcp_server, get_smart_mcp_server_with_routing
 
 
 def main():
@@ -130,7 +127,7 @@ def main():
         )
 
     # Set up signal handlers (local implementation avoids sys.exit in handler)
-    _setup_signal_handlers()
+    setup_signal_handlers()
 
     try:
         prompt_count, tool_count, resource_count, resource_template_count = asyncio.run(
@@ -170,7 +167,7 @@ def main():
     merged_server.run()
 
 
-def _setup_signal_handlers() -> None:
+def setup_signal_handlers() -> None:
     """
     Set up signal handlers for graceful shutdown without sys.exit.
     Modified from awslabs.openapi_mcp_server.server.setup_signal_handlers
