@@ -240,8 +240,9 @@ def test_get_predefined_api_set_biothings_all():
         "cc857d5b7c8b7609b5bbb38ff990bfff",  # GO Biological Process API
         "f339b28426e7bf72028f60feefcd7465",  # GO Cellular Component API
         "34bad236d77bea0a0ee6c6cba5be54a6",  # GO Molecular Function API
+        "27a5b60716c3a401f2c021a5b718c5b1",  # SmartAPI registry API
     ]
-    assert len(result["smartapi_exclude_ids"]) == 5
+    assert len(result["smartapi_exclude_ids"]) == 6
     for expected_id in expected_exclusions:
         assert expected_id in result["smartapi_exclude_ids"]
 

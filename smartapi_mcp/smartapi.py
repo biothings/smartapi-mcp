@@ -12,23 +12,60 @@ from awslabs.openapi_mcp_server.api.config import Config
 from awslabs.openapi_mcp_server.utils.openapi import load_openapi_spec
 from awslabs.openapi_mcp_server.utils.openapi_validator import validate_openapi_spec
 
-smartapi_query_url = "https://smart-api.info/api/query?q={q}&fields=_id&size=500&raw=1"
+smartapi_query_url = "https://smart-api.info/api/query"
 smartapi_spec_url = "https://smart-api.info/api/metadata/{smartapi_id}"
+
+# Default timeout (seconds) for all SmartAPI registry HTTP calls.
+HTTP_TIMEOUT = 30.0
+
+
+async def get_smartapi_registry(
+    q: str | None = None, ids: list[str] | None = None
+) -> list[dict]:
+    """Query the SmartAPI registry and return metadata for matching APIs.
+
+    Returns a list of ``{"_id", "title", "description", "tags"}`` dicts. Pass
+    either a query string ``q`` or an explicit list of ``ids`` (which is turned
+    into an ``_id:(...)`` query so a whole set is fetched in a single request).
+    """
+    if ids:
+        q = "_id:({})".format(" OR ".join(ids))
+    if not q:
+        err_msg = "Either a query string or a list of IDs must be provided."
+        raise ValueError(err_msg)
+
+    params = {
+        "q": q,
+        "fields": "info.title,info.description,tags",
+        "size": 500,
+        "raw": 1,
+    }
+    async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
+        response = await client.get(smartapi_query_url, params=params)
+        response.raise_for_status()
+        data = response.json()
+
+    entries: list[dict] = []
+    for hit in data.get("hits", []):
+        info = hit.get("info", {}) or {}
+        tags = [
+            tag.get("name", "") for tag in hit.get("tags", []) if isinstance(tag, dict)
+        ]
+        entries.append(
+            {
+                "_id": hit.get("_id", ""),
+                "title": info.get("title", ""),
+                "description": info.get("description", ""),
+                "tags": [tag for tag in tags if tag],
+            }
+        )
+    return entries
 
 
 async def get_smartapi_ids(q: str) -> list[str]:
     """Give a query string, return a list of SmartAPI IDs matching the query."""
-    _url = smartapi_query_url.format(q=q)
-
-    smartapi_ids = []
-    async with httpx.AsyncClient() as client:
-        response = await client.get(_url)
-        response.raise_for_status()
-        data = response.json()
-        for api in data["hits"]:
-            smartapi_id = api["_id"]
-            smartapi_ids.append(smartapi_id)
-    return smartapi_ids
+    entries = await get_smartapi_registry(q=q)
+    return [entry["_id"] for entry in entries if entry["_id"]]
 
 
 def load_api_spec(smartapi_id: str) -> dict:
@@ -109,6 +146,7 @@ def get_predefined_api_set(api_set: str) -> dict:
                 "cc857d5b7c8b7609b5bbb38ff990bfff",  # GO Biological Process API
                 "f339b28426e7bf72028f60feefcd7465",  # GO Cellular Component API
                 "34bad236d77bea0a0ee6c6cba5be54a6",  # GO Molecular Function API
+                "27a5b60716c3a401f2c021a5b718c5b1",  # SmartAPI registry API
             ],
         }
     err_msg = f"Unknown API set: {api_set}"
