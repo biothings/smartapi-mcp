@@ -14,9 +14,10 @@ class Config(_config.Config):
     smartapi_exclude_ids: list[str] | None = None
     smartapi_q: str = ""
     smartapi_api_set: str = ""
-    server_name: str = "smartapi-mcp"
-    smart_routing: bool = False
-    max_context_tools: int = 50
+    server_name: str = "smartapi_mcp"
+    facade: str = "auto"
+    facade_threshold: int = 10
+    facade_strict: bool = False
 
 
 def _parse_bool(value: str) -> bool:
@@ -45,12 +46,11 @@ def load_config(args: Any = None) -> Config:
         ),
         "SMARTAPI_Q": (lambda v: setattr(config, "smartapi_q", v)),
         "SMARTAPI_API_SET": (lambda v: setattr(config, "smartapi_api_set", v)),
-        "SMARTAPI_ROUTING": (
-            lambda v: setattr(config, "smart_routing", _parse_bool(v))
+        "SMARTAPI_FACADE": (lambda v: setattr(config, "facade", v.strip().lower())),
+        "FACADE_THRESHOLD": (
+            lambda v: setattr(config, "facade_threshold", _parse_int(v, 10))
         ),
-        "MAX_CONTEXT_TOOLS": (
-            lambda v: setattr(config, "max_context_tools", _parse_int(v, 50))
-        ),
+        "FACADE_STRICT": (lambda v: setattr(config, "facade_strict", _parse_bool(v))),
         "SERVER_NAME": (lambda v: setattr(config, "server_name", v)),
     }
 
@@ -102,10 +102,12 @@ def load_config(args: Any = None) -> Config:
         if hasattr(args, "server_name") and args.server_name:
             logger.debug(f"Setting MCP Server name from arguments: {args.server_name}")
             config.server_name = args.server_name
-        if hasattr(args, "smart_routing"):
-            config.smart_routing = bool(args.smart_routing)
-        if hasattr(args, "max_context_tools") and args.max_context_tools:
-            config.max_context_tools = int(args.max_context_tools)
+        if getattr(args, "facade", None):
+            config.facade = str(args.facade).strip().lower()
+        if getattr(args, "facade_threshold", None):
+            config.facade_threshold = int(args.facade_threshold)
+        if getattr(args, "facade_strict", False):
+            config.facade_strict = True
         if hasattr(args, "transport") and args.transport:
             logger.debug(
                 f"Setting MCP Server transport mode from arguments: {args.transport}"

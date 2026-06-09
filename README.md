@@ -17,7 +17,9 @@ Built on top of the [AWS Labs OpenAPI MCP Server](https://github.com/awslabs/ope
 
 - Python 3.10 or higher
 - Network access to SmartAPI registry (https://smart-api.info)
-- Dependencies: `awslabs_openapi_mcp_server>=0.2.12`
+- Dependencies: `awslabs_openapi_mcp_server>=0.2.12,<1` and `fastmcp>=2.14,<3`
+  (awslabs 1.x / fastmcp 3.x are not yet supported — see the dependency notes in
+  `pyproject.toml`)
 
 ## Features
 
@@ -27,9 +29,10 @@ Built on top of the [AWS Labs OpenAPI MCP Server](https://github.com/awslabs/ope
 - 📖 **OpenAPI Validation**: Automatic OpenAPI specification parsing and validation
 - 🛠️ **CLI Interface**: Easy-to-use command-line interface with multiple configuration options
 - 🧬 **Bioinformatics Focus**: Pre-configured API sets for bioinformatics and life sciences
+- 🧩 **Scales to large API sets**: Large BioThings sets (e.g. `biothings_all`, 200+ operations) automatically collapse to ~5 generic tools, avoiding client context overflow without relying on client-side tool deferral
 - 🎯 **Flexible Configuration**: Support for environment variables, arguments, and configuration files
 - 🚀 **Multiple Transport Modes**: Support for both stdio and HTTP transport protocols
-- 🧪 **Comprehensive Testing**: Full test suite with 99% code coverage
+- 🧪 **Comprehensive Testing**: Full test suite with high code coverage
 
 ## Installation
 
@@ -153,6 +156,51 @@ For other MCP clients that support external MCP servers, you can typically confi
   }
 }
 ```
+
+#### Large API Sets (`biothings_all`) — the BioThings facade
+
+All BioThings APIs share the same handful of operations (`/query`,
+`/{type}/{id}`, batch lookups, `/metadata/fields`). Emitting one MCP tool per
+(API × operation) for a large set like `biothings_all` would create 200+
+near-duplicate tools and overflow the client's context window.
+
+To avoid this, for large BioThings sets the server exposes a small **fixed set
+of ~5 generic tools** where the target API is a *parameter*:
+
+- `list_biothings_apis` — discover/search the available APIs (returns data)
+- `biothings_query` — search any API (`/query`)
+- `biothings_get` / `biothings_getbatch` — annotation lookup by id(s)
+- `biothings_fields` — list queryable fields for an API
+
+Because the tool list is small and static, this works on **every** MCP client
+(no dependency on dynamic `tools/list_changed` updates).
+
+For a **mixed** set (BioThings + other API types), the server is *hybrid*: the
+BioThings APIs are served through the facade, while any non-BioThings APIs are
+added as faithful per-API tools in the same server — so no APIs are lost.
+
+```json
+{
+  "mcpServers": {
+    "biothings-all": {
+      "command": "uvx",
+      "args": ["smartapi-mcp", "--api_set", "biothings_all"]
+    }
+  }
+}
+```
+
+Control the strategy with `--facade {auto,on,off}` (default `auto`, which
+engages the facade once the BioThings APIs in the set reach
+`--facade-threshold`, default 10) or the `SMARTAPI_FACADE` environment variable.
+Use `--facade off` to force faithful per-API tools regardless of set size.
+
+A few BioThings APIs expose extra, non-standard endpoints (e.g. SemmedDB's
+`/query/ngd`) that the generic facade tools can't reach. These are rare, so by
+default they're ignored. Pass `--facade-strict` (or `FACADE_STRICT=1`) to
+inspect each BioThings spec at startup and serve any API that has extra
+endpoints with faithful per-API tools instead — at the cost of slower startup
+(it downloads the specs upfront).
 
 #### Development/Testing Setup
 
@@ -438,6 +486,11 @@ export SMARTAPI_IDS="id1,id2,id3"
 export SMARTAPI_Q="tags.name=biothings"
 export SMARTAPI_API_SET="biothings_core"
 export SMARTAPI_EXCLUDE_IDS="exclude_id1,exclude_id2"
+
+# BioThings facade strategy (see "Large API Sets" above)
+export SMARTAPI_FACADE="auto"     # auto | on | off
+export FACADE_THRESHOLD="10"      # min BioThings APIs before 'auto' uses the facade
+export FACADE_STRICT="false"      # inspect specs; serve APIs with extra endpoints per-API
 
 # Server configuration
 export SERVER_NAME="My SmartAPI MCP Server"

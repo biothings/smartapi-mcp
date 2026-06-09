@@ -11,8 +11,8 @@ from awslabs.openapi_mcp_server.api.config import Config
 from awslabs.openapi_mcp_server.server import create_mcp_server_async
 from fastmcp import FastMCP
 
-# Import router functions
-from .router import create_progressive_server, create_smart_router_server
+# Import BioThings generic-facade builder
+from .biothings import build_biothings_facade, build_registry, partition_biothings
 
 # Import from smartapi module - avoiding circular imports
 from .smartapi import (
@@ -35,6 +35,41 @@ async def get_mcp_server(smartapi_id: str) -> FastMCP:
     return await create_mcp_server_async(config)
 
 
+async def _merge_servers_into(
+    target: FastMCP, list_of_servers: list[FastMCP]
+) -> FastMCP:
+    """Add the tools/prompts of each server to ``target``, prefixed by API name.
+
+    Tool and prompt names are prefixed with the source server's (API) name to
+    avoid conflicts. ``target`` is mutated in place and returned.
+    """
+    for server in list_of_servers:
+        api_name = re.sub(
+            r"[^a-z0-9_-]", "_", getattr(server, "name", "unknown_api").lower()
+        )
+
+        tools = await server.get_tools()
+        if tools:
+            for original_name, tool in tools.items():
+                # Rename the tool by prefixing with API name
+                tool.name = f"{api_name}_{original_name}"
+                target.add_tool(tool)
+        else:
+            err_msg = f"Server {server} does not have accessible tools."
+            raise AttributeError(err_msg)
+
+        # Merge prompts
+        prompts = await server.get_prompts()
+        if prompts:
+            for original_name, prompt in prompts.items():
+                # Rename the prompt by prefixing with API name
+                prompt.name = f"{api_name}_{original_name}"
+                target.add_prompt(prompt)
+            logger.debug(f"Merged {len(prompts)} prompts from {api_name}")
+
+    return target
+
+
 async def merge_mcp_servers(
     list_of_servers: list[FastMCP], merged_name: str = "merged_mcp"
 ) -> FastMCP:
@@ -51,38 +86,7 @@ async def merge_mcp_servers(
     Returns:
         A new FastMCP instance with renamed tools from all input servers.
     """
-    merged_mcp = FastMCP(merged_name)
-
-    for server in list_of_servers:
-        api_name = re.sub(
-            r"[^a-z0-9_-]", "_", getattr(server, "name", "unknown_api").lower()
-        )
-
-        tools = await server.get_tools()
-        if tools:
-            for original_name, tool in tools.items():
-                # Rename the tool by prefixing with API name
-                new_name = f"{api_name}_{original_name}"
-                tool.name = new_name  # Modify the tool's name attribute
-
-                # Add the renamed tool to the merged instance
-                merged_mcp.add_tool(tool)
-        else:
-            err_msg = f"Server {server} does not have accessible tools."
-            raise AttributeError(err_msg)
-
-        # Merge prompts
-        prompts = await server.get_prompts()
-        if prompts:
-            for original_name, prompt in prompts.items():
-                # Rename the prompt by prefixing with API name
-                new_name = f"{api_name}_{original_name}"
-                prompt.name = new_name  # Modify the prompt's name attribute
-                # Add the renamed prompt to the merged instance
-                merged_mcp.add_prompt(prompt)
-            logger.debug(f"Merged {len(prompts)} prompts from {api_name}")
-
-    return merged_mcp
+    return await _merge_servers_into(FastMCP(merged_name), list_of_servers)
 
 
 async def get_merged_mcp_server(
@@ -126,7 +130,39 @@ async def get_merged_mcp_server(
     return merged_server
 
 
-async def get_smart_mcp_server_with_routing(
+async def _resolve_smartapi_ids(
+    smartapi_q: str | None = None,
+    smartapi_id: str | None = None,
+    smartapi_ids: list[str] | None = None,
+    smartapi_exclude_ids: list[str] | None = None,
+    api_set: str | None = None,
+) -> list[str]:
+    """Resolve the various ID sources into a deduped, exclusion-filtered list."""
+    if api_set:
+        api_set_args = get_predefined_api_set(api_set)
+        smartapi_ids = api_set_args.get("smartapi_ids", smartapi_ids)
+        smartapi_q = api_set_args.get("smartapi_q", smartapi_q)
+        smartapi_exclude_ids = api_set_args.get(
+            "smartapi_exclude_ids", smartapi_exclude_ids
+        )
+
+    if smartapi_q:
+        smartapi_ids = await get_smartapi_ids(smartapi_q)
+    if smartapi_id:
+        smartapi_ids = [smartapi_id]
+
+    if smartapi_ids:
+        # Dedupe while preserving order (stable, unlike set()).
+        smartapi_ids = list(dict.fromkeys(smartapi_ids))
+    if not smartapi_ids:
+        err_msg = "No SmartAPI IDs provided or found with the given query."
+        raise ValueError(err_msg)
+
+    exclude = set(smartapi_exclude_ids or [])
+    return [sid for sid in smartapi_ids if sid not in exclude]
+
+
+async def build_server_for_set(
     smartapi_q: str | None = None,
     smartapi_id: str | None = None,
     smartapi_ids: list[str] | None = None,
@@ -134,62 +170,87 @@ async def get_smart_mcp_server_with_routing(
     api_set: str | None = None,
     server_name: str = "smartapi_mcp",
     *,
-    smart_routing: bool = False,
-    max_context_tools: int = 50,
+    facade: str = "auto",
+    facade_threshold: int = 10,
+    facade_strict: bool = False,
 ) -> FastMCP:
-    """Smart MCP server with intelligent routing and progressive loading"""
-    logger.debug(
-        "Creating smart MCP server: routing=%s, max_tools=%s",
-        smart_routing,
-        max_context_tools,
-    )
+    """Build the MCP server for an API set, picking the right strategy.
 
-    # Resolve API IDs from various sources
-    if api_set:
-        api_set_args = get_predefined_api_set(api_set)
-        if "smartapi_ids" in api_set_args:
-            smartapi_ids = api_set_args["smartapi_ids"]
-        if "smartapi_q" in api_set_args:
-            smartapi_q = api_set_args["smartapi_q"]
-        if "smartapi_exclude_ids" in api_set_args:
-            smartapi_exclude_ids = api_set_args["smartapi_exclude_ids"]
+    For large BioThings sets the **generic facade** (a fixed ~5 tools where the
+    target API is a parameter) is used to avoid the 200+ per-API tool explosion.
+    For a **mixed** set, the result is a *hybrid* server: the BioThings APIs are
+    served through the facade while any non-BioThings APIs are added as faithful
+    per-API tools in the same server, so nothing is lost. ``facade`` is one of
+    ``"auto"`` (facade when enough APIs in the set are BioThings),
+    ``"on"`` (force facade for the BioThings subset), or ``"off"`` (always emit
+    per-API tools for every API).
 
-    if smartapi_q:
-        smartapi_ids = await get_smartapi_ids(smartapi_q)
-
-    if smartapi_id:
-        smartapi_ids = [smartapi_id]
-
-    if not smartapi_ids:
-        err_msg = "No SmartAPI IDs provided or found with the given query."
-        raise ValueError(err_msg)
-
-    smartapi_exclude_ids = smartapi_exclude_ids or []
-    available_ids = [sid for sid in smartapi_ids if sid not in smartapi_exclude_ids]
-
-    large_api_threshold = 50
-    medium_api_threshold = 10
-
-    # Use smart routing for large API sets
-    if smart_routing and len(available_ids) >= large_api_threshold:
-        logger.info("🔍 Using smart routing for large API set")
-        return await create_smart_router_server(
-            available_ids, server_name, max_context_tools
-        )
-
-    # Use progressive loading for medium sets
-    if len(available_ids) >= medium_api_threshold:
-        logger.info("📦 Using progressive loading for medium API set")
-        return await create_progressive_server(
-            available_ids, server_name, max_context_tools
-        )
-
-    # Default to full loading for small sets
-    logger.info("🔧 Using full loading for small API set")
-    return await get_merged_mcp_server(
+    ``facade_strict`` (default ``False``) controls handling of the rare
+    BioThings APIs that expose endpoints beyond the standard interface (e.g.
+    SemmedDB's ``/query/ngd``). When ``False``, all BioThings APIs go through the
+    facade and those extra endpoints are not reachable (fast startup, no spec
+    downloads). When ``True``, each BioThings spec is inspected and any API with
+    extra endpoints is served with faithful per-API tools instead (slower
+    startup; downloads specs upfront).
+    """
+    available_ids = await _resolve_smartapi_ids(
         smartapi_q=smartapi_q,
-        smartapi_ids=available_ids,
+        smartapi_id=smartapi_id,
+        smartapi_ids=smartapi_ids,
         smartapi_exclude_ids=smartapi_exclude_ids,
         api_set=api_set,
+    )
+
+    if facade != "off":
+        registry = await build_registry(available_ids)
+        biothings = {
+            name: entry for name, entry in registry.items() if "biothings" in entry.tags
+        }
+        if facade == "on" and not biothings:
+            logger.warning(
+                "facade='on' but no BioThings APIs were found in the set; "
+                "falling back to per-API tools."
+            )
+        use_facade = bool(biothings) and (
+            facade == "on" or len(biothings) >= facade_threshold
+        )
+        if use_facade:
+            if facade_strict:
+                # Inspect specs: only fully-standard BioThings APIs go in the
+                # facade; ones with extra endpoints fall back to per-API tools.
+                facade_entries, extra_bt_ids = await partition_biothings(biothings)
+            else:
+                # Fast path: assume every BioThings API is fully standard.
+                facade_entries, extra_bt_ids = biothings, []
+            non_biothings_ids = [
+                entry.smartapi_id
+                for name, entry in registry.items()
+                if name not in biothings
+            ]
+            per_api_ids = non_biothings_ids + extra_bt_ids
+
+            if facade_entries:
+                server = build_biothings_facade(facade_entries, server_name)
+                if per_api_ids:
+                    logger.info(
+                        f"Hybrid server: facade over {len(facade_entries)} "
+                        f"BioThings API(s) + per-API tools for "
+                        f"{len(per_api_ids)} other API(s)."
+                    )
+                    extra_servers = [await get_mcp_server(sid) for sid in per_api_ids]
+                    await _merge_servers_into(server, extra_servers)
+                else:
+                    logger.info(
+                        f"Using BioThings facade for {len(facade_entries)} APIs "
+                        f"(server_name={server_name})."
+                    )
+                return server
+            logger.info(
+                "No APIs qualified for the BioThings facade; using per-API tools."
+            )
+
+    logger.info(f"Using per-API tools for {len(available_ids)} APIs.")
+    return await get_merged_mcp_server(
+        smartapi_ids=available_ids,
         server_name=server_name,
     )
