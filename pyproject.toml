@@ -31,7 +31,12 @@ classifiers = [
 keywords = ["mcp", "smartapi", "api", "server", "bioinformatics"]
 requires-python = ">=3.10"
 dependencies = [
-    "awslabs_openapi_mcp_server>=0.2.12",
+    # awslabs 1.x requires fastmcp 3.x, which removed FastMCP.get_tools() and
+    # rejects *args tool functions -- incompatible with this package for now.
+    # fastmcp is also pinned <3 directly because awslabs 0.2.x allows fastmcp>=2.14
+    # with no upper bound and would otherwise resolve to the breaking 3.x.
+    "awslabs_openapi_mcp_server>=0.2.12,<1",
+    "fastmcp>=2.14,<3",
 ]
 
 [project.optional-dependencies]
@@ -51,11 +56,6 @@ test = [
 docs = [
     "sphinx>=5.0.0",
     "sphinx-rtd-theme>=1.0.0",
-]
-smart-routing = [
-    "numpy>=1.24.0",
-    "sentence-transformers>=2.6.0",
-    "faiss-cpu>=1.7.4",
 ]
 
 [project.urls]
