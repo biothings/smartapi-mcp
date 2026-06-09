@@ -5,6 +5,15 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] - 2026-06-09
+
+### Added
+- Declared and tested support for **Python 3.14**: added the `3.14` classifier
+  and extended the CI test matrices to `3.10`–`3.14` (also bumped
+  `actions/setup-python` to v5). The package runs on the free-threaded 3.14
+  build as well, though it offers no meaningful benefit there (the workload is
+  I/O-bound and asyncio-based).
+
 ## [0.3.0] - 2026-06-09
 
 ### Added
