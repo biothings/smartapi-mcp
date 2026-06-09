@@ -17,7 +17,9 @@ Built on top of the [AWS Labs OpenAPI MCP Server](https://github.com/awslabs/ope
 
 - Python 3.10 or higher
 - Network access to SmartAPI registry (https://smart-api.info)
-- Dependencies: `awslabs_openapi_mcp_server>=0.2.12`
+- Dependencies: `awslabs_openapi_mcp_server>=0.2.12,<1` and `fastmcp>=2.14,<3`
+  (awslabs 1.x / fastmcp 3.x are not yet supported — see the dependency notes in
+  `pyproject.toml`)
 
 ## Features
 
@@ -484,6 +486,11 @@ export SMARTAPI_IDS="id1,id2,id3"
 export SMARTAPI_Q="tags.name=biothings"
 export SMARTAPI_API_SET="biothings_core"
 export SMARTAPI_EXCLUDE_IDS="exclude_id1,exclude_id2"
+
+# BioThings facade strategy (see "Large API Sets" above)
+export SMARTAPI_FACADE="auto"     # auto | on | off
+export FACADE_THRESHOLD="10"      # min BioThings APIs before 'auto' uses the facade
+export FACADE_STRICT="false"      # inspect specs; serve APIs with extra endpoints per-API
 
 # Server configuration
 export SERVER_NAME="My SmartAPI MCP Server"
