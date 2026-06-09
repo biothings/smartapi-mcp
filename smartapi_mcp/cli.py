@@ -15,7 +15,7 @@ from awslabs.openapi_mcp_server.server import get_all_counts
 from awslabs.openapi_mcp_server.utils.metrics_provider import metrics
 
 from .config import load_config
-from .server import get_merged_mcp_server, get_smart_mcp_server_with_routing
+from .server import build_server_for_set
 
 
 def main():
@@ -25,8 +25,9 @@ def main():
     parser.add_argument(
         "--api_set",
         help=(
-            "the set of predefined SmartAPI APIs to include, e.g. 'biothings_core' "
-            "or 'biothings'."
+            "A predefined set of SmartAPI APIs to include. One of: "
+            "'biothings_core' (5 core BioThings APIs), 'biothings_test' "
+            "(core + SemmedDB), or 'biothings_all' (all BioThings APIs)."
         ),
     )
     parser.add_argument(
@@ -39,7 +40,10 @@ def main():
     )
     parser.add_argument(
         "--smartapi_q",
-        help="Pass a query string for a list of SmartAPIs to create a MCP server.",
+        help=(
+            "A SmartAPI registry search query selecting which APIs to include, "
+            "e.g. 'tags.name:biothings'."
+        ),
     )
     parser.add_argument(
         "--smartapi_exclude_ids",
@@ -66,15 +70,35 @@ def main():
         help='The name of the MCP server, default is "smartapi_mcp".',
     )
     parser.add_argument(
-        "--smart-routing",
-        action="store_true",
-        help="Enable smart routing for large API sets (recommended for 50+ APIs)",
+        "--facade",
+        choices=["auto", "on", "off"],
+        default="auto",
+        help=(
+            "How to expose large BioThings sets. The facade collapses BioThings "
+            "APIs into ~5 generic tools (the target API is a parameter); any "
+            "non-BioThings APIs in the set are added as per-API tools (hybrid). "
+            "'auto' (default): use the facade once there are enough BioThings "
+            "APIs (see --facade-threshold). 'on': always use it for BioThings "
+            "APIs. 'off': always emit faithful per-API tools for every API."
+        ),
     )
     parser.add_argument(
-        "--max-context-tools",
+        "--facade-threshold",
         type=int,
-        default=50,
-        help="Maximum number of tools to load at once (default: 50)",
+        default=10,
+        help=(
+            "Number of BioThings APIs in the set at which 'auto' switches to the "
+            "facade (default: 10)."
+        ),
+    )
+    parser.add_argument(
+        "--facade-strict",
+        action="store_true",
+        help=(
+            "Inspect BioThings specs and serve any API that has non-standard "
+            "endpoints (e.g. SemmedDB's /query/ngd) with faithful per-API tools "
+            "instead of the facade. Slower startup (downloads specs upfront)."
+        ),
     )
     parser.add_argument(
         "--log-level",
@@ -94,37 +118,29 @@ def main():
     logger.debug("Loading configuration from arguments and environment")
     config = load_config(args)
 
-    # Add smart routing config
-    config.smart_routing = getattr(args, "smart_routing", False)
-    config.max_context_tools = getattr(args, "max_context_tools", 50)
-
     logger.debug("Configuration loaded.")
 
-    # Use smart routing if enabled
-    if getattr(config, "smart_routing", False):
+    try:
         merged_server = asyncio.run(
-            get_smart_mcp_server_with_routing(
+            build_server_for_set(
                 smartapi_q=config.smartapi_q,
                 smartapi_id=config.smartapi_id,
                 smartapi_ids=config.smartapi_ids,
                 smartapi_exclude_ids=config.smartapi_exclude_ids,
                 api_set=config.smartapi_api_set,
                 server_name=config.server_name,
-                smart_routing=getattr(config, "smart_routing", False),
-                max_context_tools=getattr(config, "max_context_tools", 50),
+                facade=getattr(config, "facade", "auto"),
+                facade_threshold=getattr(config, "facade_threshold", 10),
+                facade_strict=getattr(config, "facade_strict", False),
             )
         )
-    else:
-        merged_server = asyncio.run(
-            get_merged_mcp_server(
-                smartapi_q=config.smartapi_q,
-                smartapi_id=config.smartapi_id,
-                smartapi_ids=config.smartapi_ids,
-                smartapi_exclude_ids=config.smartapi_exclude_ids,
-                api_set=config.smartapi_api_set,
-                server_name=config.server_name,
-            )
+    except ValueError as e:
+        logger.error(f"Cannot start server: {e}")
+        logger.error(
+            "Specify which APIs to serve with one of: --api_set, --smartapi_id, "
+            "--smartapi_ids, or --smartapi_q (see --help)."
         )
+        sys.exit(1)
 
     # Set up signal handlers (local implementation avoids sys.exit in handler)
     setup_signal_handlers()

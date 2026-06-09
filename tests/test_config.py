@@ -37,7 +37,7 @@ class TestConfig:
         assert config.smartapi_exclude_ids is None
         assert config.smartapi_q == ""
         assert config.smartapi_api_set == ""
-        assert config.server_name == "smartapi-mcp"
+        assert config.server_name == "smartapi_mcp"
 
     def test_config_class_customization(self):
         """Test that Config class can be customized with different values."""
@@ -82,7 +82,7 @@ class TestLoadConfig:
         assert config.smartapi_exclude_ids is None
         assert config.smartapi_q == ""
         assert config.smartapi_api_set == ""
-        assert config.server_name == "smartapi-mcp"
+        assert config.server_name == "smartapi_mcp"
 
         # Test that base load_config was called
         mock_base_load_config.assert_called_once_with(None)
@@ -158,7 +158,7 @@ class TestLoadConfig:
         assert config.smartapi_ids is None
         assert config.smartapi_exclude_ids is None
         assert config.smartapi_api_set == ""
-        assert config.server_name == "smartapi-mcp"
+        assert config.server_name == "smartapi_mcp"
 
     @patch("smartapi_mcp.config.logger")
     @patch("awslabs.openapi_mcp_server.api.config.load_config")

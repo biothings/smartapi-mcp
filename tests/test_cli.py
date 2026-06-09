@@ -69,7 +69,7 @@ class TestCLI:
         assert args.port == 9000
 
     @patch("smartapi_mcp.cli.asyncio")
-    @patch("smartapi_mcp.cli.get_merged_mcp_server")
+    @patch("smartapi_mcp.cli.build_server_for_set")
     @patch("smartapi_mcp.cli.get_all_counts")
     @patch("smartapi_mcp.cli.setup_signal_handlers")
     @patch("smartapi_mcp.cli.load_config")
@@ -129,7 +129,7 @@ class TestCLI:
         mock_server.run.assert_called_once_with()
 
     @patch("smartapi_mcp.cli.asyncio")
-    @patch("smartapi_mcp.cli.get_merged_mcp_server")
+    @patch("smartapi_mcp.cli.build_server_for_set")
     @patch("smartapi_mcp.cli.get_all_counts")
     @patch("smartapi_mcp.cli.load_config")
     @patch("sys.argv", ["smartapi-mcp", "--api_set", "biothings_all"])
@@ -181,7 +181,7 @@ class TestCLI:
         mock_server.run.assert_called_once_with()
 
     @patch("smartapi_mcp.cli.asyncio")
-    @patch("smartapi_mcp.cli.get_merged_mcp_server")
+    @patch("smartapi_mcp.cli.build_server_for_set")
     @patch("smartapi_mcp.cli.get_all_counts")
     @patch("smartapi_mcp.cli.load_config")
     @patch(
@@ -245,7 +245,7 @@ class TestCLI:
         )
 
     @patch("smartapi_mcp.cli.asyncio")
-    @patch("smartapi_mcp.cli.get_merged_mcp_server")
+    @patch("smartapi_mcp.cli.build_server_for_set")
     @patch("smartapi_mcp.cli.get_all_counts")
     @patch("smartapi_mcp.cli.load_config")
     @patch("sys.argv", ["smartapi-mcp", "--smartapi_id", "test_id"])
@@ -294,7 +294,7 @@ class TestCLI:
         mock_server.run.assert_called_once_with()
 
     @patch("smartapi_mcp.cli.asyncio")
-    @patch("smartapi_mcp.cli.get_merged_mcp_server")
+    @patch("smartapi_mcp.cli.build_server_for_set")
     @patch("smartapi_mcp.cli.get_all_counts")
     @patch("smartapi_mcp.cli.load_config")
     @patch("sys.argv", ["smartapi-mcp", "--smartapi_id", "test_id"])
@@ -344,7 +344,7 @@ class TestCLI:
         mock_server.run.assert_called_once_with()
 
     @patch("smartapi_mcp.cli.asyncio")
-    @patch("smartapi_mcp.cli.get_merged_mcp_server")
+    @patch("smartapi_mcp.cli.build_server_for_set")
     @patch("smartapi_mcp.cli.get_all_counts")
     @patch("smartapi_mcp.cli.load_config")
     @patch("sys.argv", ["smartapi-mcp", "--smartapi_id", "test_id"])
@@ -394,7 +394,7 @@ class TestCLI:
         assert exc_info.value.code == 1
 
     @patch("smartapi_mcp.cli.asyncio")
-    @patch("smartapi_mcp.cli.get_merged_mcp_server")
+    @patch("smartapi_mcp.cli.build_server_for_set")
     @patch("smartapi_mcp.cli.get_all_counts")
     @patch("smartapi_mcp.cli.load_config")
     @patch("sys.argv", ["smartapi-mcp", "--api_set", "unknown"])
@@ -425,9 +425,10 @@ class TestCLI:
 
         mock_asyncio.run.side_effect = mock_run_side_effect
 
-        # Run main and expect it to raise ValueError
-        with pytest.raises(ValueError, match="Unknown API set: unknown"):
+        # Unknown API set -> clean exit with code 1 (not a raw traceback)
+        with pytest.raises(SystemExit) as exc_info:
             main()
+        assert exc_info.value.code == 1
 
     @patch("smartapi_mcp.cli.argparse.ArgumentParser.parse_args")
     def test_argument_parsing_integration(self, mock_parse_args):
@@ -443,7 +444,7 @@ class TestCLI:
 
         with (
             patch("smartapi_mcp.cli.asyncio") as mock_asyncio,
-            patch("smartapi_mcp.cli.get_merged_mcp_server"),
+            patch("smartapi_mcp.cli.build_server_for_set"),
             patch("smartapi_mcp.cli.get_all_counts"),
             patch("smartapi_mcp.cli.setup_signal_handlers"),
             patch("smartapi_mcp.cli.load_config") as mock_load_config,
@@ -498,7 +499,7 @@ class TestCLIEdgeCases:
             main()
 
     @patch("smartapi_mcp.cli.asyncio")
-    @patch("smartapi_mcp.cli.get_merged_mcp_server")
+    @patch("smartapi_mcp.cli.build_server_for_set")
     @patch("smartapi_mcp.cli.get_all_counts")
     @patch("smartapi_mcp.cli.load_config")
     @patch("sys.argv", ["smartapi-mcp", "--api_set", ""])
@@ -529,12 +530,13 @@ class TestCLIEdgeCases:
 
         mock_asyncio.run.side_effect = mock_run_side_effect
 
-        # Run main and expect it to raise ValueError
-        with pytest.raises(ValueError, match="No SmartAPI IDs provided"):
+        # No APIs selected -> clean exit with code 1 (not a raw traceback)
+        with pytest.raises(SystemExit) as exc_info:
             main()
+        assert exc_info.value.code == 1
 
     @patch("smartapi_mcp.cli.asyncio")
-    @patch("smartapi_mcp.cli.get_merged_mcp_server")
+    @patch("smartapi_mcp.cli.build_server_for_set")
     @patch("smartapi_mcp.cli.get_all_counts")
     @patch("smartapi_mcp.cli.load_config")
     @patch(
