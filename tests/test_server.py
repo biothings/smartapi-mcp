@@ -8,6 +8,7 @@ import pytest
 from fastmcp import FastMCP
 
 from smartapi_mcp import get_mcp_server, get_merged_mcp_server, merge_mcp_servers
+from smartapi_mcp.server import MAX_TOOL_NAME_LEN, _fit_name
 from smartapi_mcp.smartapi import get_predefined_api_set
 
 test_api_id_1 = "59dce17363dce279d389100834e43648"  # MyGene.info
@@ -256,3 +257,81 @@ async def test_merge_mcp_servers_special_characters_in_name():
 
     # Verify tools were added to merged server
     assert len(tools) == 2
+
+
+def test_fit_name_keeps_short_names():
+    """Names within the 64-char limit are returned unchanged."""
+    name = "mygene_info_query"
+    assert _fit_name(name, set()) == name
+
+
+def test_fit_name_truncates_long_names():
+    """Names over the limit are truncated to <= 64 chars with a hash suffix."""
+    long_name = "a_very_long_biothings_api_name_" + "x" * 60 + "_query_operation"
+    assert len(long_name) > MAX_TOOL_NAME_LEN
+
+    fitted = _fit_name(long_name, set())
+    assert len(fitted) <= MAX_TOOL_NAME_LEN
+    # Deterministic: same input yields the same fitted name.
+    assert _fit_name(long_name, set()) == fitted
+
+
+def test_fit_name_truncation_is_collision_free():
+    """Two long names sharing a 64-char prefix get distinct fitted names."""
+    base = "same_prefix_" + "y" * 70
+    name_a = base + "_alpha"
+    name_b = base + "_beta"
+
+    fitted_a = _fit_name(name_a, set())
+    fitted_b = _fit_name(name_b, set())
+    assert fitted_a != fitted_b
+    assert len(fitted_a) <= MAX_TOOL_NAME_LEN
+    assert len(fitted_b) <= MAX_TOOL_NAME_LEN
+
+
+def test_fit_name_avoids_used_names():
+    """A name already in use is rewritten even if it is within the limit."""
+    used = {"mygene_info_query"}
+    fitted = _fit_name("mygene_info_query", used)
+    assert fitted != "mygene_info_query"
+    assert len(fitted) <= MAX_TOOL_NAME_LEN
+
+
+@pytest.mark.asyncio
+async def test_merge_mcp_servers_enforces_name_length_limit():
+    """Merged per-API tool names never exceed the 64-char MCP limit."""
+    mock_server = MagicMock()
+    mock_server.name = "Some BioThings API With A Fairly Long Descriptive Name"
+    long_tool = MagicMock()
+    long_tool.name = "placeholder"
+    tool_key = "get_an_annotation_by_a_very_specific_identifier_endpoint"
+    mock_server.get_tools = AsyncMock(return_value={tool_key: long_tool})
+    mock_server.get_prompts = AsyncMock(return_value={})
+
+    merged_server = await merge_mcp_servers([mock_server])
+
+    tools = await merged_server.get_tools()
+    assert len(tools) == 1
+    assert all(len(name) <= MAX_TOOL_NAME_LEN for name in tools)
+    assert len(long_tool.name) <= MAX_TOOL_NAME_LEN
+
+
+@pytest.mark.asyncio
+async def test_merge_mcp_servers_enforces_prompt_name_length_limit():
+    """Merged per-API prompt names never exceed the 64-char MCP limit."""
+    mock_server = MagicMock()
+    mock_server.name = "Some BioThings API With A Fairly Long Descriptive Name"
+    tool = MagicMock()
+    tool.name = "placeholder"
+    long_prompt = MagicMock()
+    long_prompt.name = "placeholder"
+    prompt_key = "explain_an_annotation_for_a_very_specific_identifier_prompt"
+    mock_server.get_tools = AsyncMock(return_value={"some_tool": tool})
+    mock_server.get_prompts = AsyncMock(return_value={prompt_key: long_prompt})
+
+    merged_server = await merge_mcp_servers([mock_server])
+
+    prompts = await merged_server.get_prompts()
+    assert len(prompts) == 1
+    assert all(len(name) <= MAX_TOOL_NAME_LEN for name in prompts)
+    assert len(long_prompt.name) <= MAX_TOOL_NAME_LEN

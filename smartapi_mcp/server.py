@@ -4,6 +4,7 @@ SmartAPI MCP Server
 Main MCP server implementation for SmartAPI integration.
 """
 
+import hashlib
 import re
 
 from awslabs.openapi_mcp_server import logger
@@ -23,6 +24,15 @@ from .smartapi import (
     smartapi_spec_url,
 )
 
+# Cap names at 64 characters. The MCP spec (SEP-986) recommends 1-64 chars for
+# *tool* names as a SHOULD, but the limit is enforced as a hard error by the
+# model APIs: both Anthropic (FrontendRemoteMcpToolDefinition.name; 400 on
+# longer names) and OpenAI (^[a-zA-Z0-9_-]{1,64}$) reject names over 64 chars.
+# So prefixed per-API names must be truncated to fit. The spec does not define a
+# length for *prompt* names, but we cap them too as a harmless safeguard against
+# clients that reuse the tool-name validator.
+MAX_TOOL_NAME_LEN = 64
+
 
 async def get_mcp_server(smartapi_id: str) -> FastMCP:
     config = Config(
@@ -35,6 +45,31 @@ async def get_mcp_server(smartapi_id: str) -> FastMCP:
     return await create_mcp_server_async(config)
 
 
+def _fit_name(name: str, used: set[str]) -> str:
+    """Return a unique name no longer than :data:`MAX_TOOL_NAME_LEN` chars.
+
+    Used for both tool and prompt names. Names within the limit (and not already
+    in ``used``) are returned unchanged. Longer or colliding names are truncated
+    and given a short hash suffix derived from the *full* name, so the result
+    stays deterministic and collision-free (two different long names hash
+    differently).
+    """
+    if len(name) <= MAX_TOOL_NAME_LEN and name not in used:
+        return name
+
+    digest = hashlib.sha1(name.encode()).hexdigest()[:6]  # noqa: S324 - non-crypto
+    suffix = f"_{digest}"
+    truncated = name[: MAX_TOOL_NAME_LEN - len(suffix)].rstrip("_") + suffix
+    # Guard against the (unlikely) case where the truncated form still collides.
+    while truncated in used:
+        digest = hashlib.sha1((name + digest).encode()).hexdigest()[:6]  # noqa: S324
+        suffix = f"_{digest}"
+        truncated = name[: MAX_TOOL_NAME_LEN - len(suffix)].rstrip("_") + suffix
+    logger.debug(f"Name '{name}' exceeds {MAX_TOOL_NAME_LEN} chars or collides; "
+                 f"renamed to '{truncated}'.")
+    return truncated
+
+
 async def _merge_servers_into(
     target: FastMCP, list_of_servers: list[FastMCP]
 ) -> FastMCP:
@@ -43,6 +78,11 @@ async def _merge_servers_into(
     Tool and prompt names are prefixed with the source server's (API) name to
     avoid conflicts. ``target`` is mutated in place and returned.
     """
+    # Seed with names already in the target (e.g. facade tools in the hybrid
+    # path) so merged per-API tools/prompts never collide with them. Tools and
+    # prompts have separate namespaces, so each gets its own set.
+    used_tool_names: set[str] = set(await target.get_tools())
+    used_prompt_names: set[str] = set(await target.get_prompts())
     for server in list_of_servers:
         api_name = re.sub(
             r"[^a-z0-9_-]", "_", getattr(server, "name", "unknown_api").lower()
@@ -51,8 +91,11 @@ async def _merge_servers_into(
         tools = await server.get_tools()
         if tools:
             for original_name, tool in tools.items():
-                # Rename the tool by prefixing with API name
-                tool.name = f"{api_name}_{original_name}"
+                # Rename the tool by prefixing with API name, keeping it within
+                # the 64-char limit that MCP clients enforce.
+                prefixed = f"{api_name}_{original_name}"
+                tool.name = _fit_name(prefixed, used_tool_names)
+                used_tool_names.add(tool.name)
                 target.add_tool(tool)
         else:
             err_msg = f"Server {server} does not have accessible tools."
@@ -62,8 +105,11 @@ async def _merge_servers_into(
         prompts = await server.get_prompts()
         if prompts:
             for original_name, prompt in prompts.items():
-                # Rename the prompt by prefixing with API name
-                prompt.name = f"{api_name}_{original_name}"
+                # Rename the prompt by prefixing with API name, keeping it
+                # within the 64-char limit that MCP clients enforce.
+                prefixed = f"{api_name}_{original_name}"
+                prompt.name = _fit_name(prefixed, used_prompt_names)
+                used_prompt_names.add(prompt.name)
                 target.add_prompt(prompt)
             logger.debug(f"Merged {len(prompts)} prompts from {api_name}")
 

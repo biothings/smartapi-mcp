@@ -27,47 +27,67 @@ def main():
         help=(
             "A predefined set of SmartAPI APIs to include. One of: "
             "'biothings_core' (5 core BioThings APIs), 'biothings_test' "
-            "(core + SemmedDB), or 'biothings_all' (all BioThings APIs)."
+            "(core + SemmedDB), or 'biothings_all' (all BioThings APIs). "
+            "[env: SMARTAPI_API_SET]"
         ),
     )
     parser.add_argument(
         "--smartapi_id",
-        help="Pass a single SmartAPI (id) to create a MCP server.",
+        help=(
+            "Pass a single SmartAPI (id) to create a MCP server. "
+            "[env: SMARTAPI_ID]"
+        ),
     )
     parser.add_argument(
         "--smartapi_ids",
-        help="Pass a list of SmartAPIs (comma-separated ids) to create a MCP server.",
+        help=(
+            "Pass a list of SmartAPIs (comma-separated ids) to create a MCP "
+            "server. [env: SMARTAPI_IDS]"
+        ),
     )
     parser.add_argument(
         "--smartapi_q",
         help=(
             "A SmartAPI registry search query selecting which APIs to include, "
-            "e.g. 'tags.name:biothings'."
+            "e.g. 'tags.name:biothings'. [env: SMARTAPI_Q]"
         ),
     )
     parser.add_argument(
         "--smartapi_exclude_ids",
         help=(
-            "Exclude a list of SmartAPIs (comma-separated ids) to create a MCP server."
+            "Exclude a list of SmartAPIs (comma-separated ids) to create a MCP "
+            "server. [env: SMARTAPI_EXCLUDE_IDS]"
         ),
     )
     parser.add_argument(
         "--host",
-        help="The host address for the MCP server in HTTP mode. Default is localhost.",
+        help=(
+            "The host address for the MCP server in HTTP mode. Default is "
+            "localhost. [env: SERVER_HOST]"
+        ),
     )
     parser.add_argument(
         "--port",
         type=int,
         default=8000,
-        help="The http port for the MCP server in HTTP mode. Default is 8000.",
+        help=(
+            "The http port for the MCP server in HTTP mode. Default is 8000. "
+            "[env: SERVER_PORT]"
+        ),
     )
     parser.add_argument(
         "--transport",
-        help="The transport mode for the MCP server, either stdio (default) or http.",
+        help=(
+            "The transport mode for the MCP server, either stdio (default) or "
+            "http. [env: SERVER_TRANSPORT]"
+        ),
     )
     parser.add_argument(
         "--server_name",
-        help='The name of the MCP server, default is "smartapi_mcp".',
+        help=(
+            'The name of the MCP server, default is "smartapi_mcp". '
+            "[env: SERVER_NAME]"
+        ),
     )
     parser.add_argument(
         "--facade",
@@ -79,7 +99,8 @@ def main():
             "non-BioThings APIs in the set are added as per-API tools (hybrid). "
             "'auto' (default): use the facade once there are enough BioThings "
             "APIs (see --facade-threshold). 'on': always use it for BioThings "
-            "APIs. 'off': always emit faithful per-API tools for every API."
+            "APIs. 'off': always emit faithful per-API tools for every API. "
+            "[env: SMARTAPI_FACADE]"
         ),
     )
     parser.add_argument(
@@ -88,7 +109,7 @@ def main():
         default=10,
         help=(
             "Number of BioThings APIs in the set at which 'auto' switches to the "
-            "facade (default: 10)."
+            "facade (default: 10). [env: FACADE_THRESHOLD]"
         ),
     )
     parser.add_argument(
@@ -97,7 +118,8 @@ def main():
         help=(
             "Inspect BioThings specs and serve any API that has non-standard "
             "endpoints (e.g. SemmedDB's /query/ngd) with faithful per-API tools "
-            "instead of the facade. Slower startup (downloads specs upfront)."
+            "instead of the facade. Slower startup (downloads specs upfront). "
+            "[env: FACADE_STRICT]"
         ),
     )
     parser.add_argument(

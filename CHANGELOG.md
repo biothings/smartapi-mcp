@@ -5,6 +5,20 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.2] - 2026-06-17
+
+### Fixed
+- **Tool and prompt names are now capped at 64 characters** when merging per-API
+  servers into a single server. MCP clients (including the Claude frontend)
+  reject longer names, which could drop tools/prompts from APIs with long names.
+  Over-long prefixed names are deterministically truncated with a short hash
+  suffix that keeps them unique and collision-free.
+
+### Changed
+- The CLI `--help` output now lists the corresponding environment variable
+  (e.g. `[env: SMARTAPI_API_SET]`) for each option that can be set via the
+  environment.
+
 ## [0.3.1] - 2026-06-09
 
 ### Added

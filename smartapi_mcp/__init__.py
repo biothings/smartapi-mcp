@@ -4,7 +4,7 @@ SmartAPI MCP Server Package
 Create MCP servers for one or multiple APIs registered in SmartAPI registry.
 """
 
-__version__ = "0.3.1"
+__version__ = "0.3.2"
 __author__ = "BioThings Team"
 __email__ = "help@biothings.io"
 
