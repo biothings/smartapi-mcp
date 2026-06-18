@@ -33,10 +33,7 @@ def main():
     )
     parser.add_argument(
         "--smartapi_id",
-        help=(
-            "Pass a single SmartAPI (id) to create a MCP server. "
-            "[env: SMARTAPI_ID]"
-        ),
+        help=("Pass a single SmartAPI (id) to create a MCP server. [env: SMARTAPI_ID]"),
     )
     parser.add_argument(
         "--smartapi_ids",
@@ -85,8 +82,7 @@ def main():
     parser.add_argument(
         "--server_name",
         help=(
-            'The name of the MCP server, default is "smartapi_mcp". '
-            "[env: SERVER_NAME]"
+            'The name of the MCP server, default is "smartapi_mcp". [env: SERVER_NAME]'
         ),
     )
     parser.add_argument(

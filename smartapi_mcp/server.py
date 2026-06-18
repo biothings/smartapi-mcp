@@ -65,8 +65,10 @@ def _fit_name(name: str, used: set[str]) -> str:
         digest = hashlib.sha1((name + digest).encode()).hexdigest()[:6]  # noqa: S324
         suffix = f"_{digest}"
         truncated = name[: MAX_TOOL_NAME_LEN - len(suffix)].rstrip("_") + suffix
-    logger.debug(f"Name '{name}' exceeds {MAX_TOOL_NAME_LEN} chars or collides; "
-                 f"renamed to '{truncated}'.")
+    logger.debug(
+        f"Name '{name}' exceeds {MAX_TOOL_NAME_LEN} chars or collides; "
+        f"renamed to '{truncated}'."
+    )
     return truncated
 
 
