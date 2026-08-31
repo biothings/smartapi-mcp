@@ -17,8 +17,9 @@ Built on top of the [AWS Labs OpenAPI MCP Server](https://github.com/awslabs/ope
 
 - Python 3.10 or higher
 - Network access to SmartAPI registry (https://smart-api.info)
-- Dependencies: `awslabs_openapi_mcp_server>=0.2.12,<1` and `fastmcp>=2.14,<3`
-  (awslabs 1.x / fastmcp 3.x are not yet supported — see the dependency notes in
+- Dependencies: `awslabs_openapi_mcp_server>=1.1.5,<2` and `fastmcp>=3.3.1,<4`
+  (fastmcp 4.x is not yet supported — it moves to the MCP 2.x SDK and `httpx2`,
+  and no awslabs release targets it yet; see the dependency notes in
   `pyproject.toml`)
 
 ## Features

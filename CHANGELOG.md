@@ -5,6 +5,22 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- **Migrated to `fastmcp` 3.x and `awslabs_openapi_mcp_server` 1.x.** Both pins
+  moved together (`fastmcp>=3.3.1,<4`, `awslabs_openapi_mcp_server>=1.1.5,<2`)
+  because the two projects migrated in lockstep. The 2.x/0.2.x lines are no
+  longer maintained upstream (last releases 2026-04-13 and 2026-03-27).
+- `_merge_servers_into()` now uses `FastMCP.list_tools()` / `list_prompts()`,
+  which replaced the dict-returning `get_tools()` / `get_prompts()` in fastmcp
+  3.x. Merged tool/prompt names, the 64-character cap, and collision handling
+  are unchanged.
+- Merge tests now build real `Tool` / `Prompt` objects instead of `MagicMock`s:
+  fastmcp 3's `add_tool()` coerces non-`Tool` inputs via `Tool.from_function()`,
+  which rejects mocks. This closes a gap where the old tests could not have
+  caught a malformed component being registered.
+
 ## [0.3.2] - 2026-06-17
 
 ### Fixed

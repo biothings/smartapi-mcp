@@ -6,6 +6,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastmcp import FastMCP
+from fastmcp.prompts import Prompt
+from fastmcp.tools import Tool
 
 from smartapi_mcp import get_mcp_server, get_merged_mcp_server, merge_mcp_servers
 from smartapi_mcp.server import MAX_TOOL_NAME_LEN, _fit_name
@@ -15,12 +17,32 @@ test_api_id_1 = "59dce17363dce279d389100834e43648"  # MyGene.info
 test_api_id_2 = "8f08d1446e0bb9c2b323713ce83e2bd3"  # MyChem.info
 
 
+def _sample_fn(q: str) -> str:
+    """Sample callable backing the test tools/prompts."""
+    return q
+
+
+def make_tool(name: str) -> Tool:
+    """Build a real :class:`Tool`.
+
+    ``FastMCP.add_tool`` coerces anything that is not already a ``Tool`` via
+    ``Tool.from_function``, so mock tools are rejected -- the merge helpers must
+    be exercised with genuine components.
+    """
+    return Tool.from_function(_sample_fn, name=name)
+
+
+def make_prompt(name: str) -> Prompt:
+    """Build a real :class:`Prompt` (see :func:`make_tool`)."""
+    return Prompt.from_function(_sample_fn, name=name)
+
+
 @pytest.mark.asyncio
 async def test_get_mcp_server():
     """Test get_mcp_server can create a MCP server based on a SmartAPI id."""
     server = await get_mcp_server(test_api_id_1)
     assert isinstance(server, FastMCP)
-    tools = await server.get_tools()
+    tools = await server.list_tools()
     assert len(tools) >= 4
     assert server.name == "MyGene.info API"
 
@@ -34,7 +56,7 @@ async def test_merge_mcp_servers():
     merged_server = await merge_mcp_servers(list_of_servers)
     assert isinstance(merged_server, FastMCP)
     assert merged_server.name == "merged_mcp"
-    tools = await merged_server.get_tools()
+    tools = await merged_server.list_tools()
     assert len(tools) >= 8
 
 
@@ -46,7 +68,7 @@ async def test_get_merged_mcp_server():
     )
     assert isinstance(merged_server, FastMCP)
     assert merged_server.name == "smartapi_mcp"
-    tools = await merged_server.get_tools()
+    tools = await merged_server.list_tools()
     assert len(tools) >= 8
 
     merged_server = await get_merged_mcp_server(
@@ -54,12 +76,12 @@ async def test_get_merged_mcp_server():
         smartapi_exclude_ids=[test_api_id_1, test_api_id_2],
     )
     assert isinstance(merged_server, FastMCP)
-    tools = await merged_server.get_tools()
+    tools = await merged_server.list_tools()
     assert len(tools) == 0
 
     merged_server = await get_merged_mcp_server(smartapi_q=f"_id: {test_api_id_1}")
     assert isinstance(merged_server, FastMCP)
-    tools = await merged_server.get_tools()
+    tools = await merged_server.list_tools()
     assert len(tools) >= 4
     assert len(tools) <= 8
 
@@ -71,8 +93,8 @@ async def test_merge_mcp_servers_no_accessible_tools():
     # Create a mock server that will trigger the AttributeError path
     mock_server = MagicMock()
     mock_server.name = "Mock Server"
-    # Make get_tools return empty dict to simulate server without accessible tools
-    mock_server.get_tools = AsyncMock(return_value={})
+    # Empty list_tools() simulates a server without accessible tools
+    mock_server.list_tools = AsyncMock(return_value=[])
 
     with pytest.raises(AttributeError) as exc_info:
         await merge_mcp_servers([mock_server])
@@ -95,7 +117,7 @@ async def test_get_merged_mcp_server_with_api_set():
     merged_server = await get_merged_mcp_server(api_set="biothings_core")
     assert isinstance(merged_server, FastMCP)
     assert merged_server.name == "smartapi_mcp"
-    tools = await merged_server.get_tools()
+    tools = await merged_server.list_tools()
     # Should have tools from MyGene, MyVariant, MyChem, and MyDisease
     assert len(tools) >= 16  # Each API typically has 4+ tools
 
@@ -111,7 +133,7 @@ async def test_get_merged_mcp_server_with_api_set_and_exclusions():
         ],  # Exclude MyGene.info
     )
     assert isinstance(merged_server, FastMCP)
-    tools = await merged_server.get_tools()
+    tools = await merged_server.list_tools()
     # Should have fewer tools than full biothings_test set
     assert len(tools) >= 12  # From 4 remaining APIs
 
@@ -122,7 +144,7 @@ async def test_get_merged_mcp_server_with_single_smartapi_id():
     merged_server = await get_merged_mcp_server(smartapi_id=test_api_id_1)
     assert isinstance(merged_server, FastMCP)
     assert merged_server.name == "smartapi_mcp"
-    tools = await merged_server.get_tools()
+    tools = await merged_server.list_tools()
     # Should have tools from just one API
     assert len(tools) >= 4
     assert len(tools) <= 8  # Reasonable upper bound for single API
@@ -176,7 +198,7 @@ async def test_get_merged_mcp_server_api_set_with_exclude_overrides():
     assert isinstance(merged_server, FastMCP)
     # Should have processed the query and included more APIs than
     # if we used the default excludes
-    tools = await merged_server.get_tools()
+    tools = await merged_server.list_tools()
     # This should have multiple APIs worth of tools
     assert len(tools) >= 8
 
@@ -188,7 +210,7 @@ async def test_get_merged_mcp_server_with_duplicate_ids():
     duplicate_ids = [test_api_id_1, test_api_id_1, test_api_id_2, test_api_id_1]
     merged_server = await get_merged_mcp_server(smartapi_ids=duplicate_ids)
     assert isinstance(merged_server, FastMCP)
-    tools = await merged_server.get_tools()
+    tools = await merged_server.list_tools()
     # Should only have tools from 2 unique APIs
     assert len(tools) >= 8  # From 2 APIs
     assert len(tools) <= 16  # Reasonable upper bound
@@ -214,7 +236,7 @@ async def test_get_merged_mcp_server_api_set_with_builtin_exclude_ids():
 
             # Verify server was created
             assert isinstance(merged_server, FastMCP)
-            tools = await merged_server.get_tools()
+            tools = await merged_server.list_tools()
 
             # Should only have tools from MyGene (the excluded API should
             # not be present)
@@ -232,31 +254,28 @@ async def test_merge_mcp_servers_special_characters_in_name():
     """Test merge_mcp_servers handles special characters in server names."""
     mock_server1 = MagicMock()
     mock_server1.name = "API with spaces & symbols!"
-    mock_tool1 = MagicMock()
-    mock_tool1.name = "original_tool_1"
-    mock_server1.get_tools = AsyncMock(return_value={"tool1": mock_tool1})
-    mock_server1.get_prompts = AsyncMock(return_value={})
+    tool1 = make_tool("tool1")
+    mock_server1.list_tools = AsyncMock(return_value=[tool1])
+    mock_server1.list_prompts = AsyncMock(return_value=[])
 
     mock_server2 = MagicMock()
     mock_server2.name = "API-with-dashes_and_underscores"
-    mock_tool2 = MagicMock()
-    mock_tool2.name = "original_tool_2"
-    mock_server2.get_tools = AsyncMock(return_value={"tool2": mock_tool2})
-    mock_server2.get_prompts = AsyncMock(return_value={})
+    tool2 = make_tool("tool2")
+    mock_server2.list_tools = AsyncMock(return_value=[tool2])
+    mock_server2.list_prompts = AsyncMock(return_value=[])
 
     merged_server = await merge_mcp_servers([mock_server1, mock_server2])
 
-    tools = await merged_server.get_tools()
+    tools = await merged_server.list_tools()
 
     # Verify that special characters were sanitized in tool names
     # The merge function should rename tools with sanitized API names
-    # Check that the tools got the correct names
-    # Pattern is: {sanitized_api_name}_{original_tool_key}
-    assert mock_tool1.name == "api_with_spaces___symbols__tool1"
-    assert mock_tool2.name == "api-with-dashes_and_underscores_tool2"
+    # Pattern is: {sanitized_api_name}_{original_tool_name}
+    assert tool1.name == "api_with_spaces___symbols__tool1"
+    assert tool2.name == "api-with-dashes_and_underscores_tool2"
 
-    # Verify tools were added to merged server
-    assert len(tools) == 2
+    # Verify tools were added to merged server under their renamed names
+    assert {tool.name for tool in tools} == {tool1.name, tool2.name}
 
 
 def test_fit_name_keeps_short_names():
@@ -302,18 +321,18 @@ async def test_merge_mcp_servers_enforces_name_length_limit():
     """Merged per-API tool names never exceed the 64-char MCP limit."""
     mock_server = MagicMock()
     mock_server.name = "Some BioThings API With A Fairly Long Descriptive Name"
-    long_tool = MagicMock()
-    long_tool.name = "placeholder"
-    tool_key = "get_an_annotation_by_a_very_specific_identifier_endpoint"
-    mock_server.get_tools = AsyncMock(return_value={tool_key: long_tool})
-    mock_server.get_prompts = AsyncMock(return_value={})
+    long_tool = make_tool("get_an_annotation_by_a_very_specific_identifier_endpoint")
+    mock_server.list_tools = AsyncMock(return_value=[long_tool])
+    mock_server.list_prompts = AsyncMock(return_value=[])
 
     merged_server = await merge_mcp_servers([mock_server])
 
-    tools = await merged_server.get_tools()
+    tools = await merged_server.list_tools()
     assert len(tools) == 1
-    assert all(len(name) <= MAX_TOOL_NAME_LEN for name in tools)
+    assert all(len(tool.name) <= MAX_TOOL_NAME_LEN for tool in tools)
     assert len(long_tool.name) <= MAX_TOOL_NAME_LEN
+    # The prefixed name was too long, so it must have been truncated.
+    assert long_tool.name.startswith("some_biothings_api_with_a_fairly_long")
 
 
 @pytest.mark.asyncio
@@ -321,17 +340,16 @@ async def test_merge_mcp_servers_enforces_prompt_name_length_limit():
     """Merged per-API prompt names never exceed the 64-char MCP limit."""
     mock_server = MagicMock()
     mock_server.name = "Some BioThings API With A Fairly Long Descriptive Name"
-    tool = MagicMock()
-    tool.name = "placeholder"
-    long_prompt = MagicMock()
-    long_prompt.name = "placeholder"
-    prompt_key = "explain_an_annotation_for_a_very_specific_identifier_prompt"
-    mock_server.get_tools = AsyncMock(return_value={"some_tool": tool})
-    mock_server.get_prompts = AsyncMock(return_value={prompt_key: long_prompt})
+    tool = make_tool("some_tool")
+    long_prompt = make_prompt(
+        "explain_an_annotation_for_a_very_specific_identifier_prompt"
+    )
+    mock_server.list_tools = AsyncMock(return_value=[tool])
+    mock_server.list_prompts = AsyncMock(return_value=[long_prompt])
 
     merged_server = await merge_mcp_servers([mock_server])
 
-    prompts = await merged_server.get_prompts()
+    prompts = await merged_server.list_prompts()
     assert len(prompts) == 1
-    assert all(len(name) <= MAX_TOOL_NAME_LEN for name in prompts)
+    assert all(len(prompt.name) <= MAX_TOOL_NAME_LEN for prompt in prompts)
     assert len(long_prompt.name) <= MAX_TOOL_NAME_LEN

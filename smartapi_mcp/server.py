@@ -83,19 +83,23 @@ async def _merge_servers_into(
     # Seed with names already in the target (e.g. facade tools in the hybrid
     # path) so merged per-API tools/prompts never collide with them. Tools and
     # prompts have separate namespaces, so each gets its own set.
-    used_tool_names: set[str] = set(await target.get_tools())
-    used_prompt_names: set[str] = set(await target.get_prompts())
+    used_tool_names: set[str] = {tool.name for tool in await target.list_tools()}
+    used_prompt_names: set[str] = {
+        prompt.name for prompt in await target.list_prompts()
+    }
     for server in list_of_servers:
         api_name = re.sub(
             r"[^a-z0-9_-]", "_", getattr(server, "name", "unknown_api").lower()
         )
 
-        tools = await server.get_tools()
+        tools = await server.list_tools()
         if tools:
-            for original_name, tool in tools.items():
+            for tool in tools:
                 # Rename the tool by prefixing with API name, keeping it within
-                # the 64-char limit that MCP clients enforce.
-                prefixed = f"{api_name}_{original_name}"
+                # the 64-char limit that MCP clients enforce. Renaming in place
+                # is safe: Component.key is a property derived from .name, so
+                # the target registers the tool under its new name.
+                prefixed = f"{api_name}_{tool.name}"
                 tool.name = _fit_name(prefixed, used_tool_names)
                 used_tool_names.add(tool.name)
                 target.add_tool(tool)
@@ -104,12 +108,12 @@ async def _merge_servers_into(
             raise AttributeError(err_msg)
 
         # Merge prompts
-        prompts = await server.get_prompts()
+        prompts = await server.list_prompts()
         if prompts:
-            for original_name, prompt in prompts.items():
+            for prompt in prompts:
                 # Rename the prompt by prefixing with API name, keeping it
                 # within the 64-char limit that MCP clients enforce.
-                prefixed = f"{api_name}_{original_name}"
+                prefixed = f"{api_name}_{prompt.name}"
                 prompt.name = _fit_name(prefixed, used_prompt_names)
                 used_prompt_names.add(prompt.name)
                 target.add_prompt(prompt)
