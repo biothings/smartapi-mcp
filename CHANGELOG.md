@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`--tool-search {off,bm25,regex}`** (env `SMARTAPI_TOOL_SEARCH`): collapses the
+  tool *listing* behind a search interface instead of listing every tool, using
+  fastmcp 3's search transforms. Clients see `search_tools` and `call_tool` and
+  discover tools on demand; every tool stays callable through `call_tool`. This
+  addresses the per-API tool explosion where the BioThings facade does not apply
+  (`biothings_all` is ~50 APIs at ~6 tools each). Facade tools are pinned so they
+  stay listed and only the per-API long tail is collapsed. Defaults to `off`.
+  `--tool-search-max-results` (env `TOOL_SEARCH_MAX_RESULTS`, default 5) caps the
+  hits per search. Results are serialized as Markdown, roughly half the size of
+  fastmcp's default JSON serialization.
+- `apply_tool_search()` in `smartapi_mcp.server` for programmatic use, plus
+  `tool_search` / `tool_search_max_results` arguments on `build_server_for_set()`.
+
 ### Changed
 - **Migrated to `fastmcp` 3.x and `awslabs_openapi_mcp_server` 1.x.** Both pins
   moved together (`fastmcp>=3.3.1,<4`, `awslabs_openapi_mcp_server>=1.1.5,<2`)

@@ -18,6 +18,8 @@ class Config(_config.Config):
     facade: str = "auto"
     facade_threshold: int = 10
     facade_strict: bool = False
+    tool_search: str = "off"
+    tool_search_max_results: int = 5
 
 
 def _parse_bool(value: str) -> bool:
@@ -51,6 +53,12 @@ def load_config(args: Any = None) -> Config:
             lambda v: setattr(config, "facade_threshold", _parse_int(v, 10))
         ),
         "FACADE_STRICT": (lambda v: setattr(config, "facade_strict", _parse_bool(v))),
+        "SMARTAPI_TOOL_SEARCH": (
+            lambda v: setattr(config, "tool_search", v.strip().lower())
+        ),
+        "TOOL_SEARCH_MAX_RESULTS": (
+            lambda v: setattr(config, "tool_search_max_results", _parse_int(v, 5))
+        ),
         "SERVER_NAME": (lambda v: setattr(config, "server_name", v)),
     }
 
@@ -108,6 +116,10 @@ def load_config(args: Any = None) -> Config:
             config.facade_threshold = int(args.facade_threshold)
         if getattr(args, "facade_strict", False):
             config.facade_strict = True
+        if getattr(args, "tool_search", None):
+            config.tool_search = str(args.tool_search).strip().lower()
+        if getattr(args, "tool_search_max_results", None):
+            config.tool_search_max_results = int(args.tool_search_max_results)
         if hasattr(args, "transport") and args.transport:
             logger.debug(
                 f"Setting MCP Server transport mode from arguments: {args.transport}"

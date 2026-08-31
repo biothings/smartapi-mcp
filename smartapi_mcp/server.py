@@ -6,11 +6,17 @@ Main MCP server implementation for SmartAPI integration.
 
 import hashlib
 import re
+from collections.abc import Iterable
 
 from awslabs.openapi_mcp_server import logger
 from awslabs.openapi_mcp_server.api.config import Config
 from awslabs.openapi_mcp_server.server import create_mcp_server_async
 from fastmcp import FastMCP
+from fastmcp.server.transforms.search import (
+    BM25SearchTransform,
+    RegexSearchTransform,
+    serialize_tools_for_output_markdown,
+)
 
 # Import BioThings generic-facade builder
 from .biothings import build_biothings_facade, build_registry, partition_biothings
@@ -32,6 +38,76 @@ from .smartapi import (
 # length for *prompt* names, but we cap them too as a harmless safeguard against
 # clients that reuse the tool-name validator.
 MAX_TOOL_NAME_LEN = 64
+
+# Ways to expose a large tool catalog. "off" lists every tool; the others
+# replace the catalog with a search interface (see :func:`apply_tool_search`).
+TOOL_SEARCH_MODES = ("off", "bm25", "regex")
+
+
+async def apply_tool_search(
+    server: FastMCP,
+    mode: str = "off",
+    *,
+    max_results: int = 5,
+    always_visible: Iterable[str] = (),
+) -> FastMCP:
+    """Collapse ``server``'s tool catalog behind a search interface.
+
+    Serving many APIs from one server makes the tool list long enough to crowd
+    out a client's context: the ``biothings_all`` set is ~50 APIs at ~6 tools
+    each. A search transform replaces the listed catalog with two synthetic
+    tools -- ``search_tools`` and ``call_tool`` -- so a model discovers tools on
+    demand instead of receiving every schema upfront. Every real tool remains
+    callable through ``call_tool``; only the *listing* changes.
+
+    Names in ``always_visible`` stay listed alongside the synthetic tools.
+    :func:`build_server_for_set` pins the BioThings facade tools this way, so
+    the common path stays directly callable and only the per-API long tail is
+    collapsed.
+
+    ``mode`` is one of :data:`TOOL_SEARCH_MODES`: ``"off"`` (leave the catalog
+    alone), ``"bm25"`` (ranked keyword relevance) or ``"regex"`` (pattern
+    match). ``max_results`` caps the hits per search. ``server`` is mutated in
+    place and returned.
+    """
+    if mode == "off":
+        return server
+    if mode not in TOOL_SEARCH_MODES:
+        err_msg = (
+            f"Unknown tool search mode {mode!r}; "
+            f"expected one of: {', '.join(TOOL_SEARCH_MODES)}."
+        )
+        raise ValueError(err_msg)
+
+    tool_count = len(await server.list_tools())
+    if not tool_count:
+        # Leave an empty server alone so the caller's "no tools registered"
+        # diagnostics still fire instead of counting the synthetic tools.
+        logger.warning(
+            f"Tool search ({mode}) requested but the server has no tools; "
+            "leaving the catalog unchanged."
+        )
+        return server
+
+    pinned = sorted(always_visible)
+    transform_cls = BM25SearchTransform if mode == "bm25" else RegexSearchTransform
+    server.add_transform(
+        transform_cls(
+            max_results=max_results,
+            always_visible=pinned,
+            # Markdown results are roughly half the size of the default JSON
+            # serialization, which is the point when enabling search at all.
+            search_result_serializer=serialize_tools_for_output_markdown,
+        )
+    )
+    exposed = len(await server.list_tools())
+    logger.info(
+        f"Tool search ({mode}) enabled: {tool_count} tools collapsed to "
+        f"{exposed} listed ({len(pinned)} pinned + search_tools/call_tool); "
+        f"max_results={max_results}. All {tool_count} tools stay callable "
+        "via call_tool."
+    )
+    return server
 
 
 async def get_mcp_server(smartapi_id: str) -> FastMCP:
@@ -225,6 +301,8 @@ async def build_server_for_set(
     facade: str = "auto",
     facade_threshold: int = 10,
     facade_strict: bool = False,
+    tool_search: str = "off",
+    tool_search_max_results: int = 5,
 ) -> FastMCP:
     """Build the MCP server for an API set, picking the right strategy.
 
@@ -244,6 +322,11 @@ async def build_server_for_set(
     downloads). When ``True``, each BioThings spec is inspected and any API with
     extra endpoints is served with faithful per-API tools instead (slower
     startup; downloads specs upfront).
+
+    ``tool_search`` (see :data:`TOOL_SEARCH_MODES`) additionally collapses the
+    tool listing behind a search interface, which is the answer to the per-API
+    tool explosion when the facade does not apply. Facade tools are pinned so
+    they stay listed. ``tool_search_max_results`` caps hits per search.
     """
     available_ids = await _resolve_smartapi_ids(
         smartapi_q=smartapi_q,
@@ -283,6 +366,15 @@ async def build_server_for_set(
 
             if facade_entries:
                 server = build_biothings_facade(facade_entries, server_name)
+                # Capture the facade tools before merging per-API servers so
+                # tool search can pin them and collapse only the long tail.
+                # Skipped entirely when tool search is off, to keep the default
+                # path free of extra work.
+                facade_tool_names: list[str] = (
+                    [tool.name for tool in await server.list_tools()]
+                    if tool_search != "off"
+                    else []
+                )
                 if per_api_ids:
                     logger.info(
                         f"Hybrid server: facade over {len(facade_entries)} "
@@ -296,13 +388,23 @@ async def build_server_for_set(
                         f"Using BioThings facade for {len(facade_entries)} APIs "
                         f"(server_name={server_name})."
                     )
-                return server
+                return await apply_tool_search(
+                    server,
+                    tool_search,
+                    max_results=tool_search_max_results,
+                    always_visible=facade_tool_names,
+                )
             logger.info(
                 "No APIs qualified for the BioThings facade; using per-API tools."
             )
 
     logger.info(f"Using per-API tools for {len(available_ids)} APIs.")
-    return await get_merged_mcp_server(
+    server = await get_merged_mcp_server(
         smartapi_ids=available_ids,
         server_name=server_name,
+    )
+    return await apply_tool_search(
+        server,
+        tool_search,
+        max_results=tool_search_max_results,
     )

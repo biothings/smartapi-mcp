@@ -15,7 +15,7 @@ from awslabs.openapi_mcp_server.server import get_all_counts
 from awslabs.openapi_mcp_server.utils.metrics_provider import metrics
 
 from .config import load_config
-from .server import build_server_for_set
+from .server import TOOL_SEARCH_MODES, build_server_for_set
 
 
 def main():
@@ -119,6 +119,32 @@ def main():
         ),
     )
     parser.add_argument(
+        "--tool-search",
+        choices=list(TOOL_SEARCH_MODES),
+        default="off",
+        help=(
+            "Collapse the tool listing behind a search interface instead of "
+            "listing every tool. Serving many APIs produces hundreds of tools "
+            "(the 'biothings_all' set is ~50 APIs x ~6 tools), which crowds out "
+            "a client's context. When enabled, clients see 'search_tools' and "
+            "'call_tool' (plus any facade tools, which stay listed) and "
+            "discover the rest on demand; every tool remains callable via "
+            "'call_tool'. 'bm25' ranks by keyword relevance, 'regex' matches "
+            "patterns, 'off' (default) lists everything. "
+            "[env: SMARTAPI_TOOL_SEARCH]"
+        ),
+    )
+    parser.add_argument(
+        "--tool-search-max-results",
+        type=int,
+        default=5,
+        help=(
+            "Maximum number of tools returned per 'search_tools' call "
+            "(default: 5). Only used when --tool-search is enabled. "
+            "[env: TOOL_SEARCH_MAX_RESULTS]"
+        ),
+    )
+    parser.add_argument(
         "--log-level",
         choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
         default="INFO",
@@ -150,6 +176,8 @@ def main():
                 facade=getattr(config, "facade", "auto"),
                 facade_threshold=getattr(config, "facade_threshold", 10),
                 facade_strict=getattr(config, "facade_strict", False),
+                tool_search=getattr(config, "tool_search", "off"),
+                tool_search_max_results=getattr(config, "tool_search_max_results", 5),
             )
         )
     except ValueError as e:

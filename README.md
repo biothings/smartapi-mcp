@@ -203,6 +203,41 @@ inspect each BioThings spec at startup and serve any API that has extra
 endpoints with faithful per-API tools instead — at the cost of slower startup
 (it downloads the specs upfront).
 
+#### Tool search (`--tool-search`)
+
+The facade solves the tool explosion for BioThings APIs. `--tool-search` solves
+it for everything else, including per-API tools in a hybrid server: instead of
+listing every tool, the server lists two synthetic tools — `search_tools` and
+`call_tool` — and the model discovers what it needs on demand.
+
+```bash
+smartapi-mcp --api_set biothings_all --tool-search bm25
+```
+
+Every tool stays *callable* through `call_tool`; only the listing changes. Facade
+tools (`biothings_query`, `biothings_get`, …) stay listed, so the common path
+remains directly callable and only the per-API long tail is collapsed:
+
+```
+Tool search (bm25) enabled: 13 tools collapsed to 7 listed
+(5 pinned + search_tools/call_tool); max_results=5.
+All 13 tools stay callable via call_tool.
+```
+
+| Mode | Behaviour |
+| --- | --- |
+| `off` (default) | List every tool |
+| `bm25` | Rank matches by keyword relevance |
+| `regex` | Match tool names/descriptions by pattern |
+
+`--tool-search-max-results` (default 5) caps the hits per search. Both options
+have environment equivalents: `SMARTAPI_TOOL_SEARCH` and
+`TOOL_SEARCH_MAX_RESULTS`.
+
+Note that discovery-on-demand costs the model an extra round trip per unfamiliar
+tool, so leave it `off` for small sets where the full list already fits
+comfortably.
+
 #### Development/Testing Setup
 
 ```json
