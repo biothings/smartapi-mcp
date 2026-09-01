@@ -5,6 +5,7 @@ These build synthetic FastMCP servers rather than hitting the SmartAPI registry,
 so they exercise the transform behaviour without network access.
 """
 
+import argparse
 import os
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -13,6 +14,7 @@ import pytest
 from fastmcp import FastMCP
 from fastmcp.tools import Tool
 
+from smartapi_mcp import cli
 from smartapi_mcp.config import Config, load_config
 from smartapi_mcp.server import (
     TOOL_SEARCH_MODES,
@@ -198,6 +200,53 @@ class TestToolSearchConfig:
             config = load_config(args)
         assert config.tool_search == "regex"
         assert config.tool_search_max_results == 3
+
+    @patch("smartapi_mcp.config.logger")
+    @patch("awslabs.openapi_mcp_server.api.config.load_config")
+    def test_unset_cli_flags_do_not_shadow_environment(
+        self, mock_base_load_config, mock_logger
+    ):
+        """argparse must pass None for unset flags, or env vars never apply.
+
+        ``load_config`` assigns from ``args`` whenever the attribute is truthy, so
+        a non-None argparse default (e.g. ``default="off"``) silently overwrote
+        the environment on every CLI run.
+        """
+        mock_base_load_config.return_value = MagicMock()
+        args = SimpleNamespace(tool_search=None, tool_search_max_results=None)
+        env = {"SMARTAPI_TOOL_SEARCH": "bm25", "TOOL_SEARCH_MAX_RESULTS": "12"}
+        with (
+            patch.dict(os.environ, env, clear=False),
+            patch("smartapi_mcp.config.fields", return_value=[]),
+        ):
+            config = load_config(args)
+        assert config.tool_search == "bm25"
+        assert config.tool_search_max_results == 12
+
+    def test_cli_parser_defaults_are_none(self):
+        """Guard the fix above at the parser level."""
+        captured = {}
+        real_add = argparse.ArgumentParser.add_argument
+
+        def spy(self, *a, **kw):
+            if a and isinstance(a[0], str) and a[0].startswith("--"):
+                captured[a[0]] = kw.get("default", "MISSING")
+            return real_add(self, *a, **kw)
+
+        with (
+            patch.object(argparse.ArgumentParser, "add_argument", spy),
+            patch("sys.argv", ["smartapi-mcp", "--help"]),
+            pytest.raises(SystemExit),
+        ):
+            cli.main()
+
+        for flag in (
+            "--tool-search",
+            "--tool-search-max-results",
+            "--facade",
+            "--facade-threshold",
+        ):
+            assert captured[flag] is None, f"{flag} default shadows its env var"
 
     @patch("smartapi_mcp.config.logger")
     @patch("awslabs.openapi_mcp_server.api.config.load_config")

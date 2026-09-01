@@ -88,7 +88,7 @@ def main():
     parser.add_argument(
         "--facade",
         choices=["auto", "on", "off"],
-        default="auto",
+        default=None,
         help=(
             "How to expose large BioThings sets. The facade collapses BioThings "
             "APIs into ~5 generic tools (the target API is a parameter); any "
@@ -102,7 +102,7 @@ def main():
     parser.add_argument(
         "--facade-threshold",
         type=int,
-        default=10,
+        default=None,
         help=(
             "Number of BioThings APIs in the set at which 'auto' switches to the "
             "facade (default: 10). [env: FACADE_THRESHOLD]"
@@ -121,7 +121,7 @@ def main():
     parser.add_argument(
         "--tool-search",
         choices=list(TOOL_SEARCH_MODES),
-        default="off",
+        default=None,
         help=(
             "Collapse the tool listing behind a search interface instead of "
             "listing every tool. Serving many APIs produces hundreds of tools "
@@ -130,14 +130,15 @@ def main():
             "'call_tool' (plus any facade tools, which stay listed) and "
             "discover the rest on demand; every tool remains callable via "
             "'call_tool'. 'bm25' ranks by keyword relevance, 'regex' matches "
-            "patterns, 'off' (default) lists everything. "
+            "patterns, 'off' (default) lists everything. CLI overrides the "
+            "environment variable, which overrides the default. "
             "[env: SMARTAPI_TOOL_SEARCH]"
         ),
     )
     parser.add_argument(
         "--tool-search-max-results",
         type=int,
-        default=5,
+        default=None,
         help=(
             "Maximum number of tools returned per 'search_tools' call "
             "(default: 5). Only used when --tool-search is enabled. "

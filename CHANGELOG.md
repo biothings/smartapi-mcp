@@ -21,6 +21,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `apply_tool_search()` in `smartapi_mcp.server` for programmatic use, plus
   `tool_search` / `tool_search_max_results` arguments on `build_server_for_set()`.
 
+### Fixed
+- **Environment variables for `--facade`, `--facade-threshold`, `--tool-search` and
+  `--tool-search-max-results` were ignored when running via the CLI.** `load_config`
+  assigns from `args` whenever the attribute is truthy, so a non-`None` argparse
+  default (`"auto"`, `10`, `"off"`, `5`) silently overwrote the environment on every
+  invocation — `SMARTAPI_FACADE=off` had no effect despite being documented in
+  `--help`. Those four defaults are now `None`, leaving the effective defaults on
+  `Config`, so precedence is CLI > environment > default. (`FACADE_STRICT` was
+  unaffected: `store_true` defaults to `False`, which is falsy.)
+
 ### Changed
 - **Migrated to `fastmcp` 3.x and `awslabs_openapi_mcp_server` 1.x.** Both pins
   moved together (`fastmcp>=3.3.1,<4`, `awslabs_openapi_mcp_server>=1.1.5,<2`)
