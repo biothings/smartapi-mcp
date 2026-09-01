@@ -18,8 +18,9 @@ class Config(_config.Config):
     facade: str = "auto"
     facade_threshold: int = 10
     facade_strict: bool = False
-    tool_search: str = "off"
-    tool_search_max_results: int = 5
+    tool_search: str = "auto"
+    tool_search_max_results: int = 10
+    tool_search_threshold: int = 50
 
 
 def _parse_bool(value: str) -> bool:
@@ -57,7 +58,10 @@ def load_config(args: Any = None) -> Config:
             lambda v: setattr(config, "tool_search", v.strip().lower())
         ),
         "TOOL_SEARCH_MAX_RESULTS": (
-            lambda v: setattr(config, "tool_search_max_results", _parse_int(v, 5))
+            lambda v: setattr(config, "tool_search_max_results", _parse_int(v, 10))
+        ),
+        "TOOL_SEARCH_THRESHOLD": (
+            lambda v: setattr(config, "tool_search_threshold", _parse_int(v, 50))
         ),
         "SERVER_NAME": (lambda v: setattr(config, "server_name", v)),
     }
@@ -120,6 +124,8 @@ def load_config(args: Any = None) -> Config:
             config.tool_search = str(args.tool_search).strip().lower()
         if getattr(args, "tool_search_max_results", None):
             config.tool_search_max_results = int(args.tool_search_max_results)
+        if getattr(args, "tool_search_threshold", None):
+            config.tool_search_threshold = int(args.tool_search_threshold)
         if hasattr(args, "transport") and args.transport:
             logger.debug(
                 f"Setting MCP Server transport mode from arguments: {args.transport}"

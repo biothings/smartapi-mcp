@@ -39,17 +39,29 @@ from .smartapi import (
 # clients that reuse the tool-name validator.
 MAX_TOOL_NAME_LEN = 64
 
-# Ways to expose a large tool catalog. "off" lists every tool; the others
-# replace the catalog with a search interface (see :func:`apply_tool_search`).
-TOOL_SEARCH_MODES = ("off", "bm25", "regex")
+# Ways to expose a large tool catalog. "off" lists every tool; "bm25"/"regex"
+# always replace the catalog with a search interface; "auto" picks between them
+# by tool count (see :func:`apply_tool_search`).
+TOOL_SEARCH_MODES = ("auto", "off", "bm25", "regex")
+
+# Mode "auto" resolves to. BM25 handles natural-language queries; regex needs the
+# caller to author a pattern and returns nothing (silently) if handed prose.
+TOOL_SEARCH_AUTO_MODE = "bm25"
+
+# Tool count at which "auto" turns search on. Per-API tool descriptions run a few
+# hundred tokens each, so a few dozen tools is already a five-figure token bill
+# for a listing the model mostly ignores; below that the full list is cheap
+# enough to be worth its directness.
+TOOL_SEARCH_AUTO_THRESHOLD = 50
 
 
 async def apply_tool_search(
     server: FastMCP,
     mode: str = "off",
     *,
-    max_results: int = 5,
+    max_results: int = 10,
     always_visible: Iterable[str] = (),
+    threshold: int = TOOL_SEARCH_AUTO_THRESHOLD,
 ) -> FastMCP:
     """Collapse ``server``'s tool catalog behind a search interface.
 
@@ -63,21 +75,32 @@ async def apply_tool_search(
     Names in ``always_visible`` stay listed alongside the synthetic tools.
     :func:`build_server_for_set` pins the BioThings facade tools this way, so
     the common path stays directly callable and only the per-API long tail is
-    collapsed.
+    collapsed. That combination is the intended arrangement: the facade answers
+    BioThings queries directly (where lexical search is weakest, because the
+    generated per-API descriptions are near-identical boilerplate), and search
+    covers the non-BioThings tail (where it works well).
 
-    ``mode`` is one of :data:`TOOL_SEARCH_MODES`: ``"off"`` (leave the catalog
-    alone), ``"bm25"`` (ranked keyword relevance) or ``"regex"`` (pattern
-    match). ``max_results`` caps the hits per search. ``server`` is mutated in
-    place and returned.
+    ``mode`` is one of :data:`TOOL_SEARCH_MODES`:
+
+    ``"auto"``
+        Enable :data:`TOOL_SEARCH_AUTO_MODE` once the server has at least
+        ``threshold`` tools; leave smaller catalogs listed in full.
+    ``"off"``
+        Leave the catalog alone.
+    ``"bm25"`` / ``"regex"``
+        Always enable that transform, regardless of size.
+
+    ``max_results`` caps the hits per search. ``server`` is mutated in place and
+    returned.
     """
-    if mode == "off":
-        return server
     if mode not in TOOL_SEARCH_MODES:
         err_msg = (
             f"Unknown tool search mode {mode!r}; "
             f"expected one of: {', '.join(TOOL_SEARCH_MODES)}."
         )
         raise ValueError(err_msg)
+    if mode == "off":
+        return server
 
     tool_count = len(await server.list_tools())
     if not tool_count:
@@ -88,6 +111,19 @@ async def apply_tool_search(
             "leaving the catalog unchanged."
         )
         return server
+
+    if mode == "auto":
+        if tool_count < threshold:
+            logger.info(
+                f"Tool search (auto): {tool_count} tools is below the "
+                f"{threshold}-tool threshold; listing them all."
+            )
+            return server
+        logger.info(
+            f"Tool search (auto): {tool_count} tools reaches the "
+            f"{threshold}-tool threshold; enabling {TOOL_SEARCH_AUTO_MODE}."
+        )
+        mode = TOOL_SEARCH_AUTO_MODE
 
     pinned = sorted(always_visible)
     transform_cls = BM25SearchTransform if mode == "bm25" else RegexSearchTransform
@@ -301,8 +337,9 @@ async def build_server_for_set(
     facade: str = "auto",
     facade_threshold: int = 10,
     facade_strict: bool = False,
-    tool_search: str = "off",
-    tool_search_max_results: int = 5,
+    tool_search: str = "auto",
+    tool_search_max_results: int = 10,
+    tool_search_threshold: int = TOOL_SEARCH_AUTO_THRESHOLD,
 ) -> FastMCP:
     """Build the MCP server for an API set, picking the right strategy.
 
@@ -323,10 +360,14 @@ async def build_server_for_set(
     extra endpoints is served with faithful per-API tools instead (slower
     startup; downloads specs upfront).
 
-    ``tool_search`` (see :data:`TOOL_SEARCH_MODES`) additionally collapses the
-    tool listing behind a search interface, which is the answer to the per-API
-    tool explosion when the facade does not apply. Facade tools are pinned so
-    they stay listed. ``tool_search_max_results`` caps hits per search.
+    ``tool_search`` (see :data:`TOOL_SEARCH_MODES`, default ``"auto"``)
+    additionally collapses the tool listing behind a search interface, which is
+    the answer to the per-API tool explosion when the facade does not apply.
+    Facade tools are pinned so they stay listed, giving a hybrid server whose
+    BioThings half is answered by the facade and whose per-API half is
+    discovered by search. ``"auto"`` engages only once the merged server has
+    ``tool_search_threshold`` tools; ``tool_search_max_results`` caps hits per
+    search.
     """
     available_ids = await _resolve_smartapi_ids(
         smartapi_q=smartapi_q,
@@ -393,6 +434,7 @@ async def build_server_for_set(
                     tool_search,
                     max_results=tool_search_max_results,
                     always_visible=facade_tool_names,
+                    threshold=tool_search_threshold,
                 )
             logger.info(
                 "No APIs qualified for the BioThings facade; using per-API tools."
@@ -407,4 +449,5 @@ async def build_server_for_set(
         server,
         tool_search,
         max_results=tool_search_max_results,
+        threshold=tool_search_threshold,
     )

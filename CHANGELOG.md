@@ -8,18 +8,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`--tool-search auto` is now the default** (env `SMARTAPI_TOOL_SEARCH`). Search
+  turns on once the merged server reaches `--tool-search-threshold` tools
+  (default 50, env `TOOL_SEARCH_THRESHOLD`); smaller catalogs keep their direct
+  listing. Combined with the BioThings facade this gives a hybrid server: the
+  facade answers BioThings queries directly (lexical search is weakest there,
+  because the generated per-API descriptions are near-identical boilerplate) and
+  search covers the non-BioThings tail (where it measures 79-86% recall@10).
+  **This changes default behaviour** for sets above the threshold: e.g. a
+  `biothings_all` per-API server previously listed ~314 tools and now lists 2.
+  Pass `--tool-search off` to restore the old behaviour.
 - **`--tool-search {off,bm25,regex}`** (env `SMARTAPI_TOOL_SEARCH`): collapses the
   tool *listing* behind a search interface instead of listing every tool, using
   fastmcp 3's search transforms. Clients see `search_tools` and `call_tool` and
   discover tools on demand; every tool stays callable through `call_tool`. This
   addresses the per-API tool explosion where the BioThings facade does not apply
   (`biothings_all` is ~50 APIs at ~6 tools each). Facade tools are pinned so they
-  stay listed and only the per-API long tail is collapsed. Defaults to `off`.
-  `--tool-search-max-results` (env `TOOL_SEARCH_MAX_RESULTS`, default 5) caps the
-  hits per search. Results are serialized as Markdown, roughly half the size of
-  fastmcp's default JSON serialization.
+  stay listed and only the per-API long tail is collapsed.
+  `--tool-search-max-results` (env `TOOL_SEARCH_MAX_RESULTS`) caps the hits per
+  search; the default is **10** (measured recall@10 vs recall@5: BioThings
+  65%->80%, non-BioThings 79%->86%, for roughly 1k extra tokens per search).
+  Results are serialized as Markdown, roughly half the size of fastmcp's default
+  JSON serialization.
 - `apply_tool_search()` in `smartapi_mcp.server` for programmatic use, plus
-  `tool_search` / `tool_search_max_results` arguments on `build_server_for_set()`.
+  `tool_search` / `tool_search_max_results` / `tool_search_threshold` arguments on
+  `build_server_for_set()`.
 
 ### Fixed
 - **Environment variables for `--facade`, `--facade-threshold`, `--tool-search` and

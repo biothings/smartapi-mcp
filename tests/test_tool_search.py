@@ -17,6 +17,7 @@ from fastmcp.tools import Tool
 from smartapi_mcp import cli
 from smartapi_mcp.config import Config, load_config
 from smartapi_mcp.server import (
+    TOOL_SEARCH_AUTO_THRESHOLD,
     TOOL_SEARCH_MODES,
     apply_tool_search,
     build_server_for_set,
@@ -159,19 +160,20 @@ async def test_build_server_for_set_plumbs_tool_search(mode, expected):
     assert await listed_names(server) == expected
 
 
-def test_tool_search_modes_contains_off_first():
-    """'off' is the documented default and must remain a valid choice."""
-    assert TOOL_SEARCH_MODES[0] == "off"
-    assert set(TOOL_SEARCH_MODES) == {"off", "bm25", "regex"}
+def test_tool_search_modes():
+    """'auto' is the default; every documented mode stays selectable."""
+    assert TOOL_SEARCH_MODES[0] == "auto"
+    assert set(TOOL_SEARCH_MODES) == {"auto", "off", "bm25", "regex"}
 
 
 class TestToolSearchConfig:
     """tool_search reaches Config from defaults, env vars and CLI args."""
 
-    def test_defaults_to_off(self):
+    def test_defaults(self):
         config = Config()
-        assert config.tool_search == "off"
-        assert config.tool_search_max_results == 5
+        assert config.tool_search == "auto"
+        assert config.tool_search_max_results == 10
+        assert config.tool_search_threshold == TOOL_SEARCH_AUTO_THRESHOLD
 
     @patch("smartapi_mcp.config.logger")
     @patch("awslabs.openapi_mcp_server.api.config.load_config")
@@ -259,4 +261,73 @@ class TestToolSearchConfig:
             patch("smartapi_mcp.config.fields", return_value=[]),
         ):
             config = load_config()
-        assert config.tool_search_max_results == 5
+        assert config.tool_search_max_results == 10
+
+
+def build_big_server(n: int) -> FastMCP:
+    """A server with ``n`` distinct tools, for exercising the auto threshold."""
+    server = FastMCP("big")
+    for i in range(n):
+
+        def fn(q: str = "") -> str:
+            return q
+
+        server.add_tool(
+            Tool.from_function(
+                fn, name=f"tool_{i:04d}", description=f"Tool number {i}."
+            )
+        )
+    return server
+
+
+class TestAutoMode:
+    """'auto' switches on tool count, so small sets keep their direct listing."""
+
+    @pytest.mark.asyncio
+    async def test_below_threshold_lists_everything(self):
+        server = build_big_server(9)
+        await apply_tool_search(server, "auto", threshold=10)
+        assert len(await listed_names(server)) == 9
+        assert "search_tools" not in await listed_names(server)
+
+    @pytest.mark.asyncio
+    async def test_at_threshold_enables_search(self):
+        server = build_big_server(10)
+        await apply_tool_search(server, "auto", threshold=10)
+        assert await listed_names(server) == {"search_tools", "call_tool"}
+
+    @pytest.mark.asyncio
+    async def test_auto_uses_bm25_not_regex(self):
+        """auto must resolve to the mode that accepts natural language."""
+        server = build_big_server(10)
+        await apply_tool_search(server, "auto", threshold=10)
+        tools = {t.name: t for t in await server.list_tools()}
+        params = (tools["search_tools"].parameters or {}).get("properties", {})
+        # bm25's search tool takes `query`; regex's takes `pattern`.
+        assert "query" in params
+        assert "pattern" not in params
+
+    @pytest.mark.asyncio
+    async def test_auto_still_pins_always_visible(self):
+        server = build_big_server(10)
+        await apply_tool_search(
+            server, "auto", threshold=10, always_visible=["tool_0000"]
+        )
+        assert await listed_names(server) == {
+            "tool_0000",
+            "search_tools",
+            "call_tool",
+        }
+
+    @pytest.mark.asyncio
+    async def test_auto_on_empty_server_is_a_noop(self):
+        server = FastMCP("empty")
+        await apply_tool_search(server, "auto", threshold=1)
+        assert await listed_names(server) == set()
+
+    @pytest.mark.asyncio
+    async def test_default_threshold_leaves_a_typical_preset_listed(self):
+        """biothings_core is ~30 tools and should stay directly listed."""
+        server = build_big_server(30)
+        await apply_tool_search(server, "auto")
+        assert len(await listed_names(server)) == 30

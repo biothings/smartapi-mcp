@@ -123,16 +123,26 @@ def main():
         choices=list(TOOL_SEARCH_MODES),
         default=None,
         help=(
-            "Collapse the tool listing behind a search interface instead of "
-            "listing every tool. Serving many APIs produces hundreds of tools "
-            "(the 'biothings_all' set is ~50 APIs x ~6 tools), which crowds out "
-            "a client's context. When enabled, clients see 'search_tools' and "
-            "'call_tool' (plus any facade tools, which stay listed) and "
-            "discover the rest on demand; every tool remains callable via "
-            "'call_tool'. 'bm25' ranks by keyword relevance, 'regex' matches "
-            "patterns, 'off' (default) lists everything. CLI overrides the "
-            "environment variable, which overrides the default. "
+            "How to expose the tool listing. Serving many APIs produces hundreds "
+            "of tools, which crowds out a client's context. When search is on, "
+            "clients see 'search_tools' and 'call_tool' (plus any facade tools, "
+            "which stay listed) and discover the rest on demand; every tool "
+            "remains callable via 'call_tool'. 'auto' (default) turns search on "
+            "once the server reaches --tool-search-threshold tools. 'bm25' and "
+            "'regex' force it on regardless of size; 'off' always lists "
+            "everything. Prefer 'bm25' over 'regex': regex needs a real pattern "
+            "and returns nothing if given a natural-language query. CLI "
+            "overrides the environment variable, which overrides the default. "
             "[env: SMARTAPI_TOOL_SEARCH]"
+        ),
+    )
+    parser.add_argument(
+        "--tool-search-threshold",
+        type=int,
+        default=None,
+        help=(
+            "Tool count at which --tool-search 'auto' turns search on "
+            "(default: 50). [env: TOOL_SEARCH_THRESHOLD]"
         ),
     )
     parser.add_argument(
@@ -141,7 +151,7 @@ def main():
         default=None,
         help=(
             "Maximum number of tools returned per 'search_tools' call "
-            "(default: 5). Only used when --tool-search is enabled. "
+            "(default: 10). Only used when tool search is active. "
             "[env: TOOL_SEARCH_MAX_RESULTS]"
         ),
     )
@@ -177,7 +187,7 @@ def main():
                 facade=getattr(config, "facade", "auto"),
                 facade_threshold=getattr(config, "facade_threshold", 10),
                 facade_strict=getattr(config, "facade_strict", False),
-                tool_search=getattr(config, "tool_search", "off"),
+                tool_search=getattr(config, "tool_search", "auto"),
                 tool_search_max_results=getattr(config, "tool_search_max_results", 5),
             )
         )

@@ -3,6 +3,7 @@
 from unittest.mock import patch
 
 import pytest
+from fastmcp import FastMCP
 from fastmcp.client import Client
 
 from smartapi_mcp import server
@@ -327,7 +328,11 @@ async def test_dispatcher_uses_facade_for_large_biothings_set():
     async def fake_partition(entries):
         return entries, []
 
-    sentinel = object()
+    # A real (empty) FastMCP: build_server_for_set counts tools to decide
+    # whether tool search applies, so an opaque object() is not a valid
+    # server double. Empty means apply_tool_search early-returns, so the
+    # identity assertions below still hold.
+    sentinel = FastMCP("sentinel")
     with (
         patch.object(server, "build_registry", fake_build_registry),
         patch.object(server, "partition_biothings", fake_partition),
@@ -346,8 +351,12 @@ async def test_dispatcher_uses_flat_for_small_set():
     async def fake_build_registry(_ids, *, q=None):  # noqa: ARG001
         return registry
 
+    flat = FastMCP("flat")
+    captured = {}
+
     async def fake_merged(smartapi_ids, server_name="smartapi_mcp"):  # noqa: ARG001
-        return ("flat", smartapi_ids)
+        captured["ids"] = smartapi_ids
+        return flat
 
     with (
         patch.object(server, "build_registry", fake_build_registry),
@@ -356,7 +365,8 @@ async def test_dispatcher_uses_flat_for_small_set():
         result = await server.build_server_for_set(
             smartapi_ids=["0", "1", "2"], facade_threshold=10
         )
-    assert result[0] == "flat"
+    assert result is flat  # took the flat per-API path, not the facade
+    assert captured["ids"] == ["0", "1", "2"]
 
 
 async def test_dispatcher_hybrid_facade_plus_per_api_for_mixed_set():
@@ -372,7 +382,11 @@ async def test_dispatcher_hybrid_facade_plus_per_api_for_mixed_set():
         return registry
 
     captured = {}
-    facade_sentinel = object()
+    # A real (empty) FastMCP: build_server_for_set counts tools to decide
+    # whether tool search applies, so an opaque object() is not a valid
+    # server double. Empty means apply_tool_search early-returns, so the
+    # identity assertions below still hold.
+    facade_sentinel = FastMCP("facade_sentinel")
 
     def fake_facade(reg, name):  # noqa: ARG001
         captured["facade_names"] = set(reg)
@@ -380,7 +394,7 @@ async def test_dispatcher_hybrid_facade_plus_per_api_for_mixed_set():
 
     async def fake_get_mcp_server(smartapi_id):
         captured.setdefault("loaded", []).append(smartapi_id)
-        return object()
+        return FastMCP("per_api")
 
     async def fake_merge(target, servers):
         captured["merge_target"] = target
@@ -420,7 +434,11 @@ async def test_dispatcher_strict_routes_biothings_with_extra_endpoints_to_per_ap
         return registry
 
     captured = {}
-    facade_sentinel = object()
+    # A real (empty) FastMCP: build_server_for_set counts tools to decide
+    # whether tool search applies, so an opaque object() is not a valid
+    # server double. Empty means apply_tool_search early-returns, so the
+    # identity assertions below still hold.
+    facade_sentinel = FastMCP("facade_sentinel")
 
     def fake_facade(reg, name):  # noqa: ARG001
         captured["facade_names"] = set(reg)
@@ -433,7 +451,7 @@ async def test_dispatcher_strict_routes_biothings_with_extra_endpoints_to_per_ap
 
     async def fake_get_mcp_server(smartapi_id):
         captured.setdefault("loaded", []).append(smartapi_id)
-        return object()
+        return FastMCP("per_api")
 
     async def fake_merge(target, servers):
         captured["merge_count"] = len(servers)
@@ -466,7 +484,11 @@ async def test_dispatcher_default_does_not_inspect_specs():
     async def fake_build_registry(_ids, *, q=None):  # noqa: ARG001
         return registry
 
-    facade_sentinel = object()
+    # A real (empty) FastMCP: build_server_for_set counts tools to decide
+    # whether tool search applies, so an opaque object() is not a valid
+    # server double. Empty means apply_tool_search early-returns, so the
+    # identity assertions below still hold.
+    facade_sentinel = FastMCP("facade_sentinel")
     with (
         patch.object(server, "build_registry", fake_build_registry),
         patch.object(server, "partition_biothings") as partition,
@@ -485,12 +507,16 @@ async def test_dispatcher_pure_biothings_set_has_no_per_api_merge():
     async def fake_build_registry(_ids, *, q=None):  # noqa: ARG001
         return registry
 
-    facade_sentinel = object()
+    # A real (empty) FastMCP: build_server_for_set counts tools to decide
+    # whether tool search applies, so an opaque object() is not a valid
+    # server double. Empty means apply_tool_search early-returns, so the
+    # identity assertions below still hold.
+    facade_sentinel = FastMCP("facade_sentinel")
     loaded = []
 
     async def fake_get_mcp_server(smartapi_id):
         loaded.append(smartapi_id)
-        return object()
+        return FastMCP("per_api")
 
     async def fake_partition(entries):
         return entries, []
@@ -509,8 +535,10 @@ async def test_dispatcher_pure_biothings_set_has_no_per_api_merge():
 
 
 async def test_dispatcher_facade_off_forces_flat_even_when_large():
+    flat = FastMCP("flat")
+
     async def fake_merged(smartapi_ids, server_name="smartapi_mcp"):  # noqa: ARG001
-        return "flat"
+        return flat
 
     with (
         patch.object(server, "build_registry") as br,
@@ -519,5 +547,5 @@ async def test_dispatcher_facade_off_forces_flat_even_when_large():
         result = await server.build_server_for_set(
             smartapi_ids=[str(i) for i in range(20)], facade="off"
         )
-    assert result == "flat"
+    assert result is flat
     br.assert_not_called()  # facade=off skips the registry build entirely
