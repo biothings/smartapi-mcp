@@ -184,6 +184,43 @@ def _fit_name(name: str, used: set[str]) -> str:
     return truncated
 
 
+async def build_api_servers(
+    smartapi_ids: list[str],
+) -> tuple[list[FastMCP], list[tuple[str, str]]]:
+    """Build one MCP server per SmartAPI id, skipping the ones that fail.
+
+    Returns ``(servers, failures)`` where each failure is ``(smartapi_id,
+    reason)``.
+
+    Not every registered spec can be turned into a server: some use external
+    ``$ref``s (refused by awslabs 1.x as an SSRF guard), some are invalid
+    OpenAPI, some have no ``servers`` block. Roughly one in six of the
+    registry's uptime-passing APIs fails for one of those reasons, and a single
+    one of them used to abort the whole build -- so ``--smartapi_q
+    '_status.uptime_status:pass'`` could not start at all. Serving the APIs that
+    do work, and reporting the rest, is far more useful than serving none.
+
+    Kept sequential like the code it replaces: fanning these out concurrently
+    makes the SmartAPI registry start refusing DNS/connections partway through,
+    which turns working APIs into spurious failures.
+    """
+    servers: list[FastMCP] = []
+    failures: list[tuple[str, str]] = []
+    for sid in smartapi_ids:
+        try:
+            servers.append(await get_mcp_server(sid))
+        except Exception as exc:  # any spec problem is survivable, skip that API
+            reason = f"{type(exc).__name__}: {str(exc)[:200]}"
+            failures.append((sid, reason))
+            logger.warning(f"Skipping SmartAPI {sid}: {reason}")
+    if failures:
+        logger.warning(
+            f"{len(failures)} of {len(smartapi_ids)} API(s) could not be loaded "
+            f"and were skipped; {len(servers)} loaded successfully."
+        )
+    return servers, failures
+
+
 async def _merge_servers_into(
     target: FastMCP, list_of_servers: list[FastMCP]
 ) -> FastMCP:
@@ -216,8 +253,12 @@ async def _merge_servers_into(
                 used_tool_names.add(tool.name)
                 target.add_tool(tool)
         else:
-            err_msg = f"Server {server} does not have accessible tools."
-            raise AttributeError(err_msg)
+            # A spec that parses but yields no tools is a property of that one
+            # API, not a reason to lose every other API in the set.
+            logger.warning(
+                f"API '{api_name}' contributed no tools; skipping it. Its spec "
+                "parsed but produced no callable operations."
+            )
 
         # Merge prompts
         prompts = await server.list_prompts()
@@ -284,13 +325,12 @@ async def get_merged_mcp_server(
         err_msg = "No SmartAPI IDs provided or found with the given query."
         raise ValueError(err_msg)
     smartapi_exclude_ids = smartapi_exclude_ids or []
-    list_of_servers = [
-        await get_mcp_server(sid)
-        for sid in smartapi_ids
-        if sid not in smartapi_exclude_ids
-    ]
+    wanted = [sid for sid in smartapi_ids if sid not in smartapi_exclude_ids]
+    list_of_servers, _failures = await build_api_servers(wanted)
     merged_server = await merge_mcp_servers(list_of_servers, server_name)
-    logger.info(f"Merged {len(list_of_servers)} APIs into one MCP server.")
+    logger.info(
+        f"Merged {len(list_of_servers)} of {len(wanted)} APIs into one MCP server."
+    )
     return merged_server
 
 
@@ -422,7 +462,7 @@ async def build_server_for_set(
                         f"BioThings API(s) + per-API tools for "
                         f"{len(per_api_ids)} other API(s)."
                     )
-                    extra_servers = [await get_mcp_server(sid) for sid in per_api_ids]
+                    extra_servers, _failures = await build_api_servers(per_api_ids)
                     await _merge_servers_into(server, extra_servers)
                 else:
                     logger.info(

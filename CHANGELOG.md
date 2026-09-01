@@ -35,6 +35,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `build_server_for_set()`.
 
 ### Fixed
+- **A single unloadable API no longer aborts the whole server.** Per-API servers
+  were built with a bare list comprehension, so one bad spec took down every
+  other API in the set. About one in six of the registry's uptime-passing APIs
+  fails to load -- external `$ref`s (refused by awslabs 1.x as an SSRF guard),
+  invalid OpenAPI schemas, missing `servers` blocks -- which made
+  `--smartapi_q '_status.uptime_status:pass'` impossible to start at all. Those
+  APIs are now skipped with a warning and a summary count, and the rest are
+  served. New `build_api_servers()` returns `(servers, failures)` for callers
+  that want the detail.
+- **A spec that parses but yields no tools is now a warning, not an error.**
+  `_merge_servers_into()` raised `AttributeError` in that case, which likewise
+  discarded every other API in the set.
 - **Environment variables for `--facade`, `--facade-threshold`, `--tool-search` and
   `--tool-search-max-results` were ignored when running via the CLI.** `load_config`
   assigns from `args` whenever the attribute is truthy, so a non-`None` argparse

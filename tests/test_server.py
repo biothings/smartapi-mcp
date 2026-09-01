@@ -87,20 +87,26 @@ async def test_get_merged_mcp_server():
 
 
 @pytest.mark.asyncio
-async def test_merge_mcp_servers_no_accessible_tools():
-    """Test merge_mcp_servers raises AttributeError when server has no accessible
-    tools."""
-    # Create a mock server that will trigger the AttributeError path
-    mock_server = MagicMock()
-    mock_server.name = "Mock Server"
-    # Empty list_tools() simulates a server without accessible tools
-    mock_server.list_tools = AsyncMock(return_value=[])
+async def test_merge_mcp_servers_skips_server_with_no_tools():
+    """A tool-less API is skipped, not fatal to the whole merge.
 
-    with pytest.raises(AttributeError) as exc_info:
-        await merge_mcp_servers([mock_server])
+    A spec can parse and still yield no callable operations. That used to raise
+    AttributeError and take down every other API in the set.
+    """
+    empty = MagicMock()
+    empty.name = "Empty API"
+    empty.list_tools = AsyncMock(return_value=[])
+    empty.list_prompts = AsyncMock(return_value=[])
 
-    assert "Server" in str(exc_info.value)
-    assert "does not have accessible tools" in str(exc_info.value)
+    good = MagicMock()
+    good.name = "Good API"
+    good.list_tools = AsyncMock(return_value=[make_tool("works")])
+    good.list_prompts = AsyncMock(return_value=[])
+
+    merged = await merge_mcp_servers([empty, good])
+
+    # the good API survived; the empty one contributed nothing
+    assert {t.name for t in await merged.list_tools()} == {"good_api_works"}
 
 
 @pytest.mark.asyncio
