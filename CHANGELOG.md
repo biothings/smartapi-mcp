@@ -35,6 +35,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `build_server_for_set()`.
 
 ### Fixed
+- **TRAPI services are no longer served through the BioThings facade.**
+  BioThings Explorer and Service Provider carry the `biothings` tag but speak
+  the Translator Reasoner query-graph protocol, not the BioThings annotation
+  interface, so none of the generic facade tools apply. They are now excluded by
+  the new `is_biothings_family()` predicate (tagged `biothings` *and* not
+  `trapi`) and served with faithful per-API tools instead.
+  This was returning wrong answers, not merely hiding endpoints: the facade
+  infers an entity type from the first `/{type}/{id}`-shaped path, and BTE's
+  `GET /asyncquery_status/{id}` matches that shape, so `biothings_get` would
+  request `/asyncquery_status/<id>` and hand back a job status as though it were
+  an annotation record — with no error. `biothings_all` avoided this via its
+  `NOT tags.name=trapi` filter, but any set assembled by id or by a
+  `tags.name:biothings` query did not.
+- **The facade's `list_biothings_apis` ranking was scoring by verbosity.**
+  `rank_apis()` summed `str.count()` of every query token over the raw API text,
+  so (a) stopwords dominated — "get a gene annotation by its Entrez gene id" was
+  driven by "get"/"a"/"by"/"its"/"id" — (b) substrings matched, with "id" hitting
+  inside "identifier", "candidate" and "provide", and (c) repetition was
+  rewarded, ranking MyGeneSet above MyGene. It now uses word-boundary tokens,
+  a stopword list, binary term frequency, Robertson/Sparck-Jones IDF, and 3x
+  weighting for name/title/tag hits over description hits. Measured on 20
+  BioThings intents against the live registry: **recall@10 75% -> 85%,
+  recall@5 70% -> 80%**, which brings facade discovery level with the BM25
+  tool-search path.
+
 - **A single unloadable API no longer aborts the whole server.** Per-API servers
   were built with a bare list comprehension, so one bad spec took down every
   other API in the set. About one in six of the registry's uptime-passing APIs
@@ -57,6 +82,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unaffected: `store_true` defaults to `False`, which is falsy.)
 
 ### Changed
+- **`--tool-search-threshold` now defaults to 15, down from 50** (env
+  `TOOL_SEARCH_THRESHOLD`). Measured over the registry's uptime-passing set
+  (592 tools, 92 APIs), one entry in `tools/list` — name plus enriched
+  description plus JSON input schema — averages ~3,900 characters (~975 tokens),
+  median ~1,270 (~320), p90 ~7,500, with one TRAPI tool at 84,000 (~21,000
+  tokens). The old default therefore let a listing reach roughly 16k tokens of
+  median-sized tools or 51k of mean-sized ones before search engaged;
+  `biothings_core --facade off` is 30 tools and measures ~31k tokens. The new
+  default caps that at roughly 5-15k while still leaving a single API (~6 tools)
+  and the facade (~5 tools) directly listed.
+  Note the 65x spread in per-tool size: tool *count* is a crude proxy for
+  payload size, and a token budget would be the better instrument — the constant
+  is documented as a floor pending that change.
+
 - **Migrated to `fastmcp` 3.x and `awslabs_openapi_mcp_server` 1.x.** Both pins
   moved together (`fastmcp>=3.3.1,<4`, `awslabs_openapi_mcp_server>=1.1.5,<2`)
   because the two projects migrated in lockstep. The 2.x/0.2.x lines are no

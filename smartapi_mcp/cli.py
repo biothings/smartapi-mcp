@@ -142,7 +142,9 @@ def main():
         default=None,
         help=(
             "Tool count at which --tool-search 'auto' turns search on "
-            "(default: 50). [env: TOOL_SEARCH_THRESHOLD]"
+            "(default: 15). A listed tool costs ~300-1000 tokens of client "
+            "context, so 15 is roughly a 5-15k-token ceiling on the listing. "
+            "[env: TOOL_SEARCH_THRESHOLD]"
         ),
     )
     parser.add_argument(

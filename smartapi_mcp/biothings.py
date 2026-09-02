@@ -12,6 +12,7 @@ the set, so the server works on every MCP client without depending on runtime
 """
 
 import asyncio
+import math
 import re
 from dataclasses import dataclass, field
 
@@ -36,6 +37,20 @@ _MAX_DESC_LEN = 200
 
 # HTTP methods recognized when enumerating spec operations.
 _HTTP_METHODS = {"get", "post", "put", "delete", "patch", "head", "options"}
+
+# Tags that disqualify an API from the BioThings *annotation-API family* even
+# though it carries the "biothings" tag. TRAPI services (BioThings Explorer,
+# Service Provider) are built by the same team and tagged accordingly, but they
+# speak the Translator Reasoner API -- a query-graph protocol -- not the
+# BioThings annotation interface, so none of the generic facade tools apply to
+# them. They are served with faithful per-API tools instead.
+#
+# This is not a cosmetic distinction: the facade infers an entity type from the
+# first ``/{type}/{id}``-shaped path, and BTE's ``GET /asyncquery_status/{id}``
+# matches that shape. Without this exclusion, ``biothings_get`` would request
+# ``/asyncquery_status/<id>`` and return a job status as though it were an
+# annotation record -- a wrong answer with no error.
+NON_FAMILY_TAGS = frozenset({"trapi"})
 
 
 @dataclass
@@ -96,11 +111,21 @@ async def build_registry(
     return build_registry_from_entries(entries)
 
 
+def is_biothings_family(entry: BioThingsAPIEntry) -> bool:
+    """Whether ``entry`` is a BioThings annotation API the facade can serve.
+
+    Requires the ``biothings`` tag and the absence of any
+    :data:`NON_FAMILY_TAGS`.
+    """
+    tags = {str(tag).strip().lower() for tag in entry.tags}
+    return "biothings" in tags and not (tags & NON_FAMILY_TAGS)
+
+
 def is_biothings_registry(registry: dict[str, BioThingsAPIEntry]) -> bool:
-    """True only if every API in the registry is tagged ``biothings``."""
+    """True only if every API in the registry is a facade-servable BioThings API."""
     if not registry:
         return False
-    return all("biothings" in entry.tags for entry in registry.values())
+    return all(is_biothings_family(entry) for entry in registry.values())
 
 
 def _resolve_endpoints(entry: BioThingsAPIEntry) -> None:
@@ -225,12 +250,126 @@ async def partition_biothings(
     return facade_entries, extra_ids
 
 
-def _score_entry(entry: BioThingsAPIEntry, tokens: list[str]) -> int:
-    """Lexical relevance: count token hits across title/description/tags."""
-    haystack = " ".join(
-        [entry.name, entry.title, entry.description, " ".join(entry.tags)]
-    ).lower()
-    return sum(haystack.count(token) for token in tokens)
+# Words too common to discriminate between APIs. Without this, a natural-language
+# intent like "get a gene annotation by its Entrez gene id" is dominated by
+# "get"/"a"/"by"/"its"/"id" rather than by "gene" and "entrez".
+_STOPWORDS = frozenset(
+    {
+        "a",
+        "an",
+        "and",
+        "are",
+        "as",
+        "at",
+        "be",
+        "by",
+        "for",
+        "from",
+        "get",
+        "how",
+        "in",
+        "into",
+        "is",
+        "it",
+        "its",
+        "of",
+        "on",
+        "or",
+        "that",
+        "the",
+        "their",
+        "them",
+        "there",
+        "these",
+        "this",
+        "to",
+        "what",
+        "when",
+        "where",
+        "which",
+        "who",
+        "with",
+        "api",
+        "apis",
+        "data",
+        "database",
+        "dataset",
+        "info",
+        "information",
+        "record",
+        "records",
+        "service",
+        "services",
+    }
+)
+
+
+def _tokenize(text: str) -> list[str]:
+    """Lower-case word tokens. Word-based, not substring-based, on purpose.
+
+    The previous scorer used ``str.count`` on the raw text, so a query term
+    like "id" also matched inside "identifier", "candidate" and "provide".
+    """
+    return re.findall(r"[a-z0-9]+", text.lower())
+
+
+# How much more a term in the API's name/title counts than one buried in its
+# description. An API *named* for a concept is a far stronger answer to a query
+# about that concept than one merely mentioning it in prose; without this,
+# scores tie constantly and the tie-break (alphabetical) decides, which
+# systematically favours the "biothings_*"-prefixed names over MyGene/MyChem.
+_NAME_FIELD_WEIGHT = 3.0
+
+
+def _entry_terms(entry: BioThingsAPIEntry) -> tuple[set[str], set[str]]:
+    """Return ``(name_terms, all_terms)`` for one API.
+
+    ``name_terms`` covers the short name, title and tags -- the curated labels;
+    ``all_terms`` adds the free-text description.
+    """
+    name_terms = set(
+        _tokenize(" ".join([entry.name, entry.title, " ".join(map(str, entry.tags))]))
+    )
+    return name_terms, name_terms | set(_tokenize(entry.description))
+
+
+def _score_entry(
+    terms: tuple[set[str], set[str]],
+    query_terms: list[str],
+    idf: dict[str, float],
+) -> float:
+    """Score one API against a query. Higher is more relevant.
+
+    ``terms`` is the ``(name_terms, all_terms)`` pair from :func:`_entry_terms`.
+
+    Three deliberate properties:
+
+    * **Binary term frequency.** A term counts once however often it appears, so
+      an API with a long, repetitive description no longer outranks a precisely
+      matching one. This was the concrete defect in the previous scorer:
+      searching "get a gene annotation by its Entrez gene id" ranked MyGeneSet
+      above MyGene, because summed substring counts reward verbosity.
+    * **IDF weighting.** A term shared by most APIs ("gene", "translator")
+      contributes almost nothing, while a rare one ("entrez", "ngd", "taxonomy")
+      dominates -- which is what makes an intent select the API it names.
+    * **Field weighting.** A hit in the name/title/tags counts
+      :data:`_NAME_FIELD_WEIGHT` times one that is only in the description. An
+      API *named* for a concept answers a query about it far better than one
+      merely mentioning it in prose, and without this, scores tie constantly and
+      the alphabetical tie-break decides -- which systematically favoured the
+      ``biothings_*``-prefixed names over MyGene/MyChem/MyVariant.
+    """
+    name_terms, all_terms = terms
+    score = 0.0
+    for term in query_terms:
+        weight = idf.get(term, 0.0)
+        if not weight:
+            continue
+        if term in name_terms:
+            score += weight * _NAME_FIELD_WEIGHT
+        elif term in all_terms:
+            score += weight
+    return score
 
 
 def rank_apis(
@@ -258,11 +397,33 @@ def rank_apis(
     if not keyword or not keyword.strip():
         return [_as_dict(registry[name]) for name in sorted(registry)]
 
-    tokens = [tok for tok in re.split(r"\W+", keyword.lower()) if tok]
-    scored = [(_score_entry(entry, tokens), entry) for entry in registry.values()]
+    query_terms = [t for t in _tokenize(keyword) if t not in _STOPWORDS]
+    if not query_terms:
+        # Nothing discriminating left (e.g. "what data is there?"): fall back to
+        # the full catalog rather than returning an arbitrary subset.
+        return [_as_dict(registry[name]) for name in sorted(registry)]
+
+    terms_by_name = {name: _entry_terms(entry) for name, entry in registry.items()}
+    total = len(registry)
+    idf = {}
+    for term in set(query_terms):
+        seen_in = sum(1 for _, all_terms in terms_by_name.values() if term in all_terms)
+        # Robertson/Sparck-Jones IDF. Chosen over the plain log(N/n) form
+        # because it stays strictly positive even for a term present in every
+        # API: with a small registry (say two APIs that both mention "gene"),
+        # a zero weight would drop every candidate and the search would answer
+        # "nothing found" for a query that in fact matches everything.
+        idf[term] = math.log(1 + (total - seen_in + 0.5) / (seen_in + 0.5))
+
+    scored = [
+        (_score_entry(terms_by_name[name], query_terms, idf), entry)
+        for name, entry in registry.items()
+    ]
     scored = [pair for pair in scored if pair[0] > 0]
     scored.sort(key=lambda pair: (-pair[0], pair[1].name))
-    return [{**_as_dict(entry), "score": score} for score, entry in scored[:limit]]
+    return [
+        {**_as_dict(entry), "score": round(score, 3)} for score, entry in scored[:limit]
+    ]
 
 
 def build_biothings_facade(
