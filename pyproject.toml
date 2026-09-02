@@ -48,7 +48,10 @@ dev = [
     "pytest>=7.0.0",
     "pytest-asyncio>=0.21.0",
     "pytest-cov>=4.0.0",
-    "ruff>=0.1.0",
+    # Upper bound deliberately: an unpinned linter makes CI results drift
+    # with upstream releases, failing on unchanged code. Raise it
+    # intentionally, with a lint/format pass, rather than by surprise.
+    "ruff>=0.14,<0.17",
     "build>=0.8.0",
     "twine>=4.0.0",
 ]
@@ -201,8 +204,11 @@ ignore = [
     "B027",
     # Allow boolean positional values in function calls
     "FBT003",
-    # Ignore complexity
-    "C901", "PLR0911", "PLR0912", "PLR0913", "PLR0915",
+    # Ignore complexity. PLR0917 (too-many-positional-arguments) is the same
+    # complaint as PLR0913 for the build entry points, which take a set of
+    # mutually exclusive API selectors; making them keyword-only would be a
+    # breaking change to the public API.
+    "C901", "PLR0911", "PLR0912", "PLR0913", "PLR0915", "PLR0917",
     # Allow print statements (useful for CLI tools)
     "T201",
     # Allow assert statements

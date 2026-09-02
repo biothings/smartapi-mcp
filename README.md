@@ -443,8 +443,9 @@ from smartapi_mcp import (
     load_api_spec,
     get_mcp_server,
     get_merged_mcp_server,
-    PREDEFINED_API_SETS
+    PREDEFINED_API_SETS,
 )
+
 
 async def main():
     # Get SmartAPI IDs using a query
@@ -455,16 +456,15 @@ async def main():
     api_spec = load_api_spec("59dce17363dce279d389100834e43648")  # MyGene.info
     print(f"Loaded API: {api_spec.get('info', {}).get('title', 'Unknown')}")
 
-    # Create MCP server for a single API
-    server = await get_mcp_server(
-        smartapi_id="59dce17363dce279d389100834e43648",
-        server_name="MyGene MCP Server"
-    )
+    # Create MCP server for a single API. The server is named after the
+    # spec's info.title; pass server_name to the merged/`build_server_for_set`
+    # entry points below if you want to choose the name yourself.
+    server = await get_mcp_server("59dce17363dce279d389100834e43648")
 
     # Create merged MCP server for multiple APIs (recommended approach)
     merged_server = await get_merged_mcp_server(
         api_set="biothings_core",  # Use predefined set
-        server_name="BioThings Core MCP Server"
+        server_name="BioThings Core MCP Server",
     )
 
     # Or with specific SmartAPI IDs
@@ -473,7 +473,7 @@ async def main():
             "59dce17363dce279d389100834e43648",  # MyGene.info
             "09c8782d9f4027712e65b95424adba79",  # MyVariant.info
         ],
-        server_name="Custom MCP Server"
+        server_name="Custom MCP Server",
     )
 
     # Show available predefined API sets
@@ -484,6 +484,7 @@ async def main():
 
     # Or run with HTTP transport
     # merged_server.run(transport="http", host="localhost", port=8000)
+
 
 if __name__ == "__main__":
     asyncio.run(main())
