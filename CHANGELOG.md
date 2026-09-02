@@ -16,7 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`--tool-search auto` is now the default** (env `SMARTAPI_TOOL_SEARCH`). Search
   turns on once the merged server reaches `--tool-search-threshold` tools
-  (default 50, env `TOOL_SEARCH_THRESHOLD`); smaller catalogs keep their direct
+  (default 15, env `TOOL_SEARCH_THRESHOLD`); smaller catalogs keep their direct
   listing. Combined with the BioThings facade this gives a hybrid server: the
   facade answers BioThings queries directly (lexical search is weakest there,
   because the generated per-API descriptions are near-identical boilerplate) and
@@ -24,7 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   **This changes default behaviour** for sets above the threshold: e.g. a
   `biothings_all` per-API server previously listed ~314 tools and now lists 2.
   Pass `--tool-search off` to restore the old behaviour.
-- **`--tool-search {off,bm25,regex}`** (env `SMARTAPI_TOOL_SEARCH`): collapses the
+- **`--tool-search {auto,off,bm25,regex}`** (env `SMARTAPI_TOOL_SEARCH`): collapses the
   tool *listing* behind a search interface instead of listing every tool, using
   fastmcp 3's search transforms. Clients see `search_tools` and `call_tool` and
   discover tools on demand; every tool stays callable through `call_tool`. This
@@ -68,13 +68,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **A single unloadable API no longer aborts the whole server.** Per-API servers
   were built with a bare list comprehension, so one bad spec took down every
-  other API in the set. About one in six of the registry's uptime-passing APIs
-  fails to load -- external `$ref`s (refused by awslabs 1.x as an SSRF guard),
-  invalid OpenAPI schemas, missing `servers` blocks -- which made
-  `--smartapi_q '_status.uptime_status:pass'` impossible to start at all. Those
-  APIs are now skipped with a warning and a summary count, and the rest are
-  served. New `build_api_servers()` returns `(servers, failures)` for callers
-  that want the detail.
+  other API in the set. Measured against the registry's uptime-passing set, 15
+  of 107 APIs (about one in seven) fail to load -- external `$ref`s (refused by
+  awslabs 1.x as an SSRF guard), invalid OpenAPI schemas, missing `servers`
+  blocks -- which made `--smartapi_q '_status.uptime_status:pass'` impossible to
+  start at all. Those APIs are now skipped with a warning and a summary count,
+  and the rest are served. New `build_api_servers()` returns
+  `(servers, failures)` for callers that want the detail.
+  This also catches `SystemExit`, not just `Exception`: awslabs reports *every*
+  spec error by calling `sys.exit(1)` from inside the library, so a spec that
+  fastmcp itself rejected (e.g. an OpenAPI 3.0 document using `"type": "null"`)
+  still aborted the whole build. It killed a 27-API run at API 17 against the
+  uptime-passing set.
 - **A spec that parses but yields no tools is now a warning, not an error.**
   `_merge_servers_into()` raised `AttributeError` in that case, which likewise
   discarded every other API in the set.
@@ -110,8 +115,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   benchmark reaches 20/20 at MRR 0.90, and the boost becomes a small safety
   margin rather than the mechanism.
 
-- **`--tool-search-threshold` now defaults to 15, down from 50** (env
-  `TOOL_SEARCH_THRESHOLD`). Measured over the registry's uptime-passing set
+- **`--tool-search-threshold` defaults to 15** (env `TOOL_SEARCH_THRESHOLD`).
+  This flag is new in this release, so 15 is its first shipped default; it was
+  tuned down from an initial 50 during development.
+  Measured over the registry's uptime-passing set
   (592 tools, 92 APIs), one entry in `tools/list` — name plus enriched
   description plus JSON input schema — averages ~3,900 characters (~975 tokens),
   median ~1,270 (~320), p90 ~7,500, with one TRAPI tool at 84,000 (~21,000
