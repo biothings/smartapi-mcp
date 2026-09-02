@@ -8,7 +8,7 @@ so they exercise the transform behaviour without network access.
 import argparse
 import os
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastmcp import FastMCP
@@ -175,52 +175,32 @@ class TestToolSearchConfig:
         assert config.tool_search_max_results == 10
         assert config.tool_search_threshold == TOOL_SEARCH_AUTO_THRESHOLD
 
-    @patch("smartapi_mcp.config.logger")
-    @patch("awslabs.openapi_mcp_server.api.config.load_config")
-    def test_from_environment(self, mock_base_load_config, mock_logger):
-        mock_base_load_config.return_value = MagicMock()
+    def test_from_environment(self):
         env = {"SMARTAPI_TOOL_SEARCH": "BM25", "TOOL_SEARCH_MAX_RESULTS": "12"}
-        with (
-            patch.dict(os.environ, env, clear=False),
-            patch("smartapi_mcp.config.fields", return_value=[]),
-        ):
+        with patch.dict(os.environ, env, clear=False):
             config = load_config()
         # Env values are normalised to lower case, like SMARTAPI_FACADE.
         assert config.tool_search == "bm25"
         assert config.tool_search_max_results == 12
 
-    @patch("smartapi_mcp.config.logger")
-    @patch("awslabs.openapi_mcp_server.api.config.load_config")
-    def test_args_override_environment(self, mock_base_load_config, mock_logger):
-        mock_base_load_config.return_value = MagicMock()
+    def test_args_override_environment(self):
         args = SimpleNamespace(tool_search="regex", tool_search_max_results=3)
         env = {"SMARTAPI_TOOL_SEARCH": "bm25", "TOOL_SEARCH_MAX_RESULTS": "12"}
-        with (
-            patch.dict(os.environ, env, clear=False),
-            patch("smartapi_mcp.config.fields", return_value=[]),
-        ):
+        with patch.dict(os.environ, env, clear=False):
             config = load_config(args)
         assert config.tool_search == "regex"
         assert config.tool_search_max_results == 3
 
-    @patch("smartapi_mcp.config.logger")
-    @patch("awslabs.openapi_mcp_server.api.config.load_config")
-    def test_unset_cli_flags_do_not_shadow_environment(
-        self, mock_base_load_config, mock_logger
-    ):
+    def test_unset_cli_flags_do_not_shadow_environment(self):
         """argparse must pass None for unset flags, or env vars never apply.
 
         ``load_config`` assigns from ``args`` whenever the attribute is truthy, so
         a non-None argparse default (e.g. ``default="off"``) silently overwrote
         the environment on every CLI run.
         """
-        mock_base_load_config.return_value = MagicMock()
         args = SimpleNamespace(tool_search=None, tool_search_max_results=None)
         env = {"SMARTAPI_TOOL_SEARCH": "bm25", "TOOL_SEARCH_MAX_RESULTS": "12"}
-        with (
-            patch.dict(os.environ, env, clear=False),
-            patch("smartapi_mcp.config.fields", return_value=[]),
-        ):
+        with patch.dict(os.environ, env, clear=False):
             config = load_config(args)
         assert config.tool_search == "bm25"
         assert config.tool_search_max_results == 12
@@ -247,19 +227,12 @@ class TestToolSearchConfig:
             "--tool-search-max-results",
             "--facade",
             "--facade-threshold",
+            "--port",
         ):
             assert captured[flag] is None, f"{flag} default shadows its env var"
 
-    @patch("smartapi_mcp.config.logger")
-    @patch("awslabs.openapi_mcp_server.api.config.load_config")
-    def test_bad_max_results_falls_back_to_default(
-        self, mock_base_load_config, mock_logger
-    ):
-        mock_base_load_config.return_value = MagicMock()
-        with (
-            patch.dict(os.environ, {"TOOL_SEARCH_MAX_RESULTS": "not-a-number"}),
-            patch("smartapi_mcp.config.fields", return_value=[]),
-        ):
+    def test_bad_max_results_falls_back_to_default(self):
+        with patch.dict(os.environ, {"TOOL_SEARCH_MAX_RESULTS": "not-a-number"}):
             config = load_config()
         assert config.tool_search_max_results == 10
 

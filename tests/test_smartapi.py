@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 import pytest
 
+from smartapi_mcp.openapi import SpecError
 from smartapi_mcp.smartapi import (
     PREDEFINED_API_SETS,
     get_base_server_url,
@@ -139,42 +140,32 @@ def test_get_base_server_url_server_without_description():
     assert base_url == "https://api.example.com"
 
 
-@patch("smartapi_mcp.smartapi.load_openapi_spec")
-@patch("smartapi_mcp.smartapi.validate_openapi_spec")
-@patch("smartapi_mcp.smartapi.logger")
-def test_load_api_spec_validation_warning(mock_logger, mock_validate, mock_load):
-    """Test load_api_spec logs warning when validation fails."""
-    # Setup mocks
-    mock_spec = {"info": {"title": "Test API"}}
-    mock_load.return_value = mock_spec
-    mock_validate.return_value = False  # Validation fails
+@patch("smartapi_mcp.smartapi.fetch_spec")
+def test_load_api_spec_delegates_to_fetch_spec(mock_fetch):
+    """load_api_spec builds the metadata URL and hands off to fetch_spec."""
+    mock_spec = {"openapi": "3.0.0", "info": {"title": "Test API"}, "paths": {}}
+    mock_fetch.return_value = mock_spec
 
-    # Call function
     result = load_api_spec("test_id")
 
-    # Verify result and warning
-    assert result == mock_spec
-    mock_logger.warning.assert_called_once_with(
-        "OpenAPI specification validation failed, but continuing anyway"
-    )
+    assert result is mock_spec
+    mock_fetch.assert_called_once_with("https://smart-api.info/api/metadata/test_id")
 
 
-@patch("smartapi_mcp.smartapi.load_openapi_spec")
-@patch("smartapi_mcp.smartapi.validate_openapi_spec")
-@patch("smartapi_mcp.smartapi.logger")
-def test_load_api_spec_validation_success(mock_logger, mock_validate, mock_load):
-    """Test load_api_spec when validation succeeds."""
-    # Setup mocks
-    mock_spec = {"info": {"title": "Test API"}}
-    mock_load.return_value = mock_spec
-    mock_validate.return_value = True  # Validation succeeds
+@patch("smartapi_mcp.smartapi.fetch_spec")
+def test_load_api_spec_propagates_spec_errors(mock_fetch):
+    """An unusable spec raises rather than being warned about and passed on.
 
-    # Call function
-    result = load_api_spec("test_id")
+    The awslabs loader logged "validation failed, but continuing anyway" and
+    returned the broken spec. Raising is more useful here: ``build_api_servers``
+    already catches per-API failures and skips that API with a warning, so the
+    caller gets a clean skip instead of a spec that fastmcp will choke on later.
+    ``SpecError`` subclasses ``ValueError``, so existing handlers still catch it.
+    """
+    mock_fetch.side_effect = SpecError("missing 'paths'")
 
-    # Verify result and no warning
-    assert result == mock_spec
-    mock_logger.warning.assert_not_called()
+    with pytest.raises(SpecError, match="missing 'paths'"):
+        load_api_spec("test_id")
 
 
 def test_get_predefined_api_set_biothings_core():

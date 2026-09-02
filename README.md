@@ -11,16 +11,17 @@ Create MCP (Model Context Protocol) servers for one or multiple APIs registered 
 
 The SmartAPI MCP Server enables integration between MCP-compatible clients and APIs registered in the SmartAPI registry. This allows for seamless discovery and interaction with bioinformatics and life sciences APIs through standardized MCP protocols.
 
-Built on top of the [AWS Labs OpenAPI MCP Server](https://github.com/awslabs/openapi-mcp-server), this project extends MCP support to the extensive collection of APIs available in the SmartAPI registry, with special focus on bioinformatics and life sciences APIs.
+Built directly on [FastMCP](https://github.com/jlowin/fastmcp), this project extends MCP support to the extensive collection of APIs available in the SmartAPI registry, with special focus on bioinformatics and life sciences APIs.
+
+Earlier releases (through 0.3.2) wrapped the [AWS Labs OpenAPI MCP Server](https://github.com/awslabs/openapi-mcp-server); parts of `smartapi_mcp/openapi.py` are derived from that project's Apache-2.0 code.
 
 ## Requirements
 
 - Python 3.10 or higher
 - Network access to SmartAPI registry (https://smart-api.info)
-- Dependencies: `awslabs_openapi_mcp_server>=1.1.5,<2` and `fastmcp>=3.3.1,<4`
-  (fastmcp 4.x is not yet supported — it moves to the MCP 2.x SDK and `httpx2`,
-  and no awslabs release targets it yet; see the dependency notes in
-  `pyproject.toml`)
+- Dependencies: `fastmcp>=3.3.1,<4`, `httpx`, `loguru` (fastmcp 4.x is not yet
+  supported — it moves to the MCP 2.x SDK and `httpx2`; see the dependency notes
+  in `pyproject.toml`)
 
 ## Features
 
@@ -706,7 +707,8 @@ This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENS
 - **[SmartAPI Registry](https://smart-api.info/)** - Registry of biomedical and life sciences APIs
 - **[Model Context Protocol (MCP)](https://modelcontextprotocol.io/)** - Standard protocol for AI model-tool integration
 - **[BioThings APIs](https://biothings.io/)** - High-performance bioinformatics APIs
-- **[AWS Labs OpenAPI MCP Server](https://github.com/awslabs/openapi-mcp-server)** - Base MCP server framework
+- **[FastMCP](https://github.com/jlowin/fastmcp)** - MCP server framework this package builds on
+- **[AWS Labs OpenAPI MCP Server](https://github.com/awslabs/openapi-mcp-server)** - Wrapped by releases through 0.3.2; some code in `smartapi_mcp/openapi.py` is derived from it
 
 ## Citation
 

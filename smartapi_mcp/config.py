@@ -1,23 +1,55 @@
+"""
+Configuration for the SmartAPI MCP server.
+
+``Config`` used to subclass ``awslabs.openapi_mcp_server.api.config.Config`` and
+inherit its ~40 fields, of which this package read five (``api_spec_url``,
+``api_base_url``, ``host``, ``port``, ``transport``); the other thirty-five
+covered authentication schemes, Cognito, tag filtering and multi-spec
+composition that SmartAPI's public APIs never used. It is now a standalone
+dataclass carrying only what is actually read.
+
+Precedence is CLI argument > environment variable > default. That relies on
+argparse passing ``None`` for unset flags: ``load_config`` assigns from ``args``
+whenever the attribute is truthy, so a non-``None`` argparse default would
+silently overwrite the environment on every run. ``cli.py`` sets those defaults
+to ``None`` and ``tests/test_tool_search.py`` guards it.
+"""
+
 import os
-from dataclasses import fields
+from dataclasses import dataclass
 from typing import Any
 
-from awslabs.openapi_mcp_server import logger
-from awslabs.openapi_mcp_server.api import config as _config
+from .log import logger
 
 
-class Config(_config.Config):
-    """Subclass of Config to add extra configuration options"""
+@dataclass
+class Config:
+    """Everything the server needs to decide what to serve and how."""
 
+    # Per-API values, filled in while building each API's server rather than by
+    # the operator. Kept on Config because the build path threads them through.
+    api_base_url: str = ""
+    api_spec_url: str = ""
+
+    # MCP server transport
+    host: str = "127.0.0.1"
+    port: int = 8000
+    transport: str = "stdio"  # stdio or http
+    server_name: str = "smartapi_mcp"
+
+    # Which SmartAPI APIs to serve
     smartapi_id: str = ""
     smartapi_ids: list[str] | None = None
     smartapi_exclude_ids: list[str] | None = None
     smartapi_q: str = ""
     smartapi_api_set: str = ""
-    server_name: str = "smartapi_mcp"
+
+    # BioThings generic facade
     facade: str = "auto"
     facade_threshold: int = 10
     facade_strict: bool = False
+
+    # Tool-search transform
     tool_search: str = "auto"
     tool_search_max_results: int = 10
     tool_search_threshold: int = 50
@@ -35,12 +67,9 @@ def _parse_int(value: str, default: int) -> int:
 
 
 def load_config(args: Any = None) -> Config:
+    """Build a :class:`Config` from environment variables and CLI arguments."""
     config = Config()
-    _cfg = _config.load_config(args)
-    for field in fields(_cfg):
-        setattr(config, field.name, getattr(_cfg, field.name))
 
-    # define the following SmartAPI-specific environment variables
     env_vars = {
         "SMARTAPI_ID": (lambda v: setattr(config, "smartapi_id", v)),
         "SMARTAPI_IDS": (lambda v: setattr(config, "smartapi_ids", v.split(","))),
@@ -64,9 +93,13 @@ def load_config(args: Any = None) -> Config:
             lambda v: setattr(config, "tool_search_threshold", _parse_int(v, 50))
         ),
         "SERVER_NAME": (lambda v: setattr(config, "server_name", v)),
+        "SERVER_HOST": (lambda v: setattr(config, "host", v)),
+        "SERVER_PORT": (lambda v: setattr(config, "port", _parse_int(v, 8000))),
+        "SERVER_TRANSPORT": (lambda v: setattr(config, "transport", v)),
+        "API_SPEC_URL": (lambda v: setattr(config, "api_spec_url", v)),
+        "API_BASE_URL": (lambda v: setattr(config, "api_base_url", v)),
     }
 
-    # Load environment variables
     env_loaded = {}
     for key, setter in env_vars.items():
         if key in os.environ:
@@ -76,42 +109,42 @@ def load_config(args: Any = None) -> Config:
 
     if env_loaded:
         logger.debug(
-            f"Loaded {len(env_loaded)} SmartAPI-specific environment variables: "
+            f"Loaded {len(env_loaded)} environment variables: "
             f"{', '.join(env_loaded.keys())}"
         )
 
-    # Load from arguments
     if args:
-        if hasattr(args, "smartapi_id") and args.smartapi_id:
+        if getattr(args, "smartapi_id", None):
             logger.debug(f"Setting SmartAPI id from arguments: {args.smartapi_id}")
             config.smartapi_id = args.smartapi_id
-        if hasattr(args, "smartapi_ids") and args.smartapi_ids:
+        if getattr(args, "smartapi_ids", None):
             logger.debug(f"Setting SmartAPI ids from arguments: {args.smartapi_ids}")
             # smartapi_ids from arguments is comma-separated
-            if isinstance(args.smartapi_ids, str):
-                config.smartapi_ids = args.smartapi_ids.split(",")
-            else:
-                config.smartapi_ids = args.smartapi_ids
-        if hasattr(args, "smartapi_exclude_ids") and args.smartapi_exclude_ids:
+            config.smartapi_ids = (
+                args.smartapi_ids.split(",")
+                if isinstance(args.smartapi_ids, str)
+                else args.smartapi_ids
+            )
+        if getattr(args, "smartapi_exclude_ids", None):
             logger.debug(
-                "Setting excluded SmartAPI ids from arguments: {}",
-                args.smartapi_exclude_ids,
+                f"Setting excluded SmartAPI ids from arguments: "
+                f"{args.smartapi_exclude_ids}"
             )
             # smartapi_exclude_ids from arguments is comma-separated
-            if isinstance(args.smartapi_exclude_ids, str):
-                config.smartapi_exclude_ids = args.smartapi_exclude_ids.split(",")
-            else:
-                config.smartapi_exclude_ids = args.smartapi_exclude_ids
-        if hasattr(args, "smartapi_q") and args.smartapi_q:
+            config.smartapi_exclude_ids = (
+                args.smartapi_exclude_ids.split(",")
+                if isinstance(args.smartapi_exclude_ids, str)
+                else args.smartapi_exclude_ids
+            )
+        if getattr(args, "smartapi_q", None):
             logger.debug(f"Setting SmartAPI query from arguments: {args.smartapi_q}")
             config.smartapi_q = args.smartapi_q
-        if hasattr(args, "api_set") and args.api_set:
+        if getattr(args, "api_set", None):
             logger.debug(
-                "Setting predefined SmartAPI API set from arguments: {}",
-                args.api_set,
+                f"Setting predefined SmartAPI API set from arguments: {args.api_set}"
             )
             config.smartapi_api_set = args.api_set
-        if hasattr(args, "server_name") and args.server_name:
+        if getattr(args, "server_name", None):
             logger.debug(f"Setting MCP Server name from arguments: {args.server_name}")
             config.server_name = args.server_name
         if getattr(args, "facade", None):
@@ -126,12 +159,17 @@ def load_config(args: Any = None) -> Config:
             config.tool_search_max_results = int(args.tool_search_max_results)
         if getattr(args, "tool_search_threshold", None):
             config.tool_search_threshold = int(args.tool_search_threshold)
-        if hasattr(args, "transport") and args.transport:
+        if getattr(args, "transport", None):
             logger.debug(
                 f"Setting MCP Server transport mode from arguments: {args.transport}"
             )
             config.transport = args.transport
-    # Log final configuration details
-    logger.info("SmartAPI Configuration loaded")
+        if getattr(args, "host", None):
+            logger.debug(f"Setting MCP Server host from arguments: {args.host}")
+            config.host = args.host
+        if getattr(args, "port", None):
+            logger.debug(f"Setting MCP Server port from arguments: {args.port}")
+            config.port = int(args.port)
 
+    logger.info("SmartAPI Configuration loaded")
     return config

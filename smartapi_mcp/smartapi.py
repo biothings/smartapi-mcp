@@ -7,10 +7,8 @@ Handles interaction with the SmartAPI registry.
 import re
 
 import httpx
-from awslabs.openapi_mcp_server import logger
-from awslabs.openapi_mcp_server.api.config import Config
-from awslabs.openapi_mcp_server.utils.openapi import load_openapi_spec
-from awslabs.openapi_mcp_server.utils.openapi_validator import validate_openapi_spec
+
+from .openapi import fetch_spec
 
 smartapi_query_url = "https://smart-api.info/api/query"
 smartapi_spec_url = "https://smart-api.info/api/metadata/{smartapi_id}"
@@ -69,16 +67,14 @@ async def get_smartapi_ids(q: str) -> list[str]:
 
 
 def load_api_spec(smartapi_id: str) -> dict:
-    config = Config(
-        api_spec_url=smartapi_spec_url.format(smartapi_id=smartapi_id),
-    )
-    api_spec = load_openapi_spec(url=config.api_spec_url)
+    """Fetch and validate the OpenAPI spec registered under ``smartapi_id``.
 
-    # Validate the OpenAPI spec
-    if not validate_openapi_spec(api_spec):
-        logger.warning("OpenAPI specification validation failed, but continuing anyway")
-
-    return api_spec
+    Raises :class:`~smartapi_mcp.openapi.SpecError` (a ``ValueError``) if the
+    spec is unusable, so callers building many APIs can skip just that one.
+    Results are cached, which matters on the ``--facade-strict`` path where a
+    spec is inspected and then built from.
+    """
+    return fetch_spec(smartapi_spec_url.format(smartapi_id=smartapi_id))
 
 
 def get_base_server_url(api_spec: dict) -> str:

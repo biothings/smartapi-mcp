@@ -8,9 +8,6 @@ import hashlib
 import re
 from collections.abc import Iterable
 
-from awslabs.openapi_mcp_server import logger
-from awslabs.openapi_mcp_server.api.config import Config
-from awslabs.openapi_mcp_server.server import create_mcp_server_async
 from fastmcp import FastMCP
 from fastmcp.server.transforms.search import (
     BM25SearchTransform,
@@ -20,6 +17,8 @@ from fastmcp.server.transforms.search import (
 
 # Import BioThings generic-facade builder
 from .biothings import build_biothings_facade, build_registry, partition_biothings
+from .log import logger
+from .openapi import build_openapi_server
 
 # Import from smartapi module - avoiding circular imports
 from .smartapi import (
@@ -27,7 +26,6 @@ from .smartapi import (
     get_predefined_api_set,
     get_smartapi_ids,
     load_api_spec,
-    smartapi_spec_url,
 )
 
 # Cap names at 64 characters. The MCP spec (SEP-986) recommends 1-64 chars for
@@ -147,14 +145,16 @@ async def apply_tool_search(
 
 
 async def get_mcp_server(smartapi_id: str) -> FastMCP:
-    config = Config(
-        api_spec_url=smartapi_spec_url.format(smartapi_id=smartapi_id),
-    )
+    """Build a faithful per-API MCP server for one SmartAPI id.
+
+    The server is named after the spec's ``info.title``, which
+    :func:`_merge_servers_into` turns into the per-API tool-name prefix.
+    """
     openapi_spec = load_api_spec(smartapi_id)
     base_server_url = get_base_server_url(openapi_spec)
-    config.api_base_url = base_server_url
+    api_name = (openapi_spec.get("info") or {}).get("title") or "OpenAPI MCP Server"
 
-    return await create_mcp_server_async(config)
+    return build_openapi_server(openapi_spec, base_server_url, api_name)
 
 
 def _fit_name(name: str, used: set[str]) -> str:
@@ -193,7 +193,8 @@ async def build_api_servers(
     reason)``.
 
     Not every registered spec can be turned into a server: some use external
-    ``$ref``s (refused by awslabs 1.x as an SSRF guard), some are invalid
+    ``$ref``s (refused as an SSRF guard, see
+    :func:`~smartapi_mcp.openapi.reject_external_refs`), some are invalid
     OpenAPI, some have no ``servers`` block. Roughly one in six of the
     registry's uptime-passing APIs fails for one of those reasons, and a single
     one of them used to abort the whole build -- so ``--smartapi_q

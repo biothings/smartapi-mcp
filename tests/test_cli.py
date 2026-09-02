@@ -29,7 +29,11 @@ import argparse
 from unittest.mock import MagicMock, patch
 
 import pytest
+from fastmcp import FastMCP
+from fastmcp.prompts import Prompt
+from fastmcp.tools import Tool
 
+from smartapi_mcp import cli
 from smartapi_mcp.cli import main
 
 
@@ -586,3 +590,25 @@ class TestCLIEdgeCases:
 
         # Should default to stdio mode
         mock_server.run.assert_called_once_with()
+
+
+class TestGetAllCounts:
+    """cli.get_all_counts, which replaced the awslabs helper of the same name."""
+
+    @pytest.mark.asyncio
+    async def test_counts_an_empty_server(self):
+        assert await cli.get_all_counts(FastMCP("empty")) == (0, 0, 0, 0)
+
+    @pytest.mark.asyncio
+    async def test_counts_tools_and_prompts(self):
+        server = FastMCP("counted")
+
+        def fn(q: str = "") -> str:
+            return q
+
+        server.add_tool(Tool.from_function(fn, name="t1"))
+        server.add_tool(Tool.from_function(fn, name="t2"))
+        server.add_prompt(Prompt.from_function(fn, name="p1"))
+
+        prompts, tools, resources, templates = await cli.get_all_counts(server)
+        assert (prompts, tools, resources, templates) == (1, 2, 0, 0)

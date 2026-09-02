@@ -16,10 +16,10 @@ import re
 from dataclasses import dataclass, field
 
 import httpx
-from awslabs.openapi_mcp_server import logger
 from fastmcp import FastMCP
 from fastmcp.tools import Tool
 
+from .log import logger
 from .smartapi import (
     HTTP_TIMEOUT,
     get_base_server_url,

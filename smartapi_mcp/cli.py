@@ -10,12 +10,23 @@ import signal
 import sys
 import traceback
 
-from awslabs.openapi_mcp_server import get_format, logger
-from awslabs.openapi_mcp_server.server import get_all_counts
-from awslabs.openapi_mcp_server.utils.metrics_provider import metrics
+from fastmcp import FastMCP
 
 from .config import load_config
+from .log import get_format, logger
 from .server import TOOL_SEARCH_MODES, build_server_for_set
+
+
+async def get_all_counts(server: FastMCP) -> tuple[int, int, int, int]:
+    """Return ``(prompts, tools, resources, resource_templates)`` for ``server``.
+
+    Used only for the startup summary and the "nothing got registered" warning.
+    """
+    prompts = await server.list_prompts()
+    tools = await server.list_tools()
+    resources = await server.list_resources()
+    resource_templates = await server.list_resource_templates()
+    return len(prompts), len(tools), len(resources), len(resource_templates)
 
 
 def main():
@@ -66,7 +77,7 @@ def main():
     parser.add_argument(
         "--port",
         type=int,
-        default=8000,
+        default=None,
         help=(
             "The http port for the MCP server in HTTP mode. Default is 8000. "
             "[env: SERVER_PORT]"
@@ -184,11 +195,12 @@ def main():
                 smartapi_exclude_ids=config.smartapi_exclude_ids,
                 api_set=config.smartapi_api_set,
                 server_name=config.server_name,
-                facade=getattr(config, "facade", "auto"),
-                facade_threshold=getattr(config, "facade_threshold", 10),
-                facade_strict=getattr(config, "facade_strict", False),
-                tool_search=getattr(config, "tool_search", "auto"),
-                tool_search_max_results=getattr(config, "tool_search_max_results", 5),
+                facade=config.facade,
+                facade_threshold=config.facade_threshold,
+                facade_strict=config.facade_strict,
+                tool_search=config.tool_search,
+                tool_search_max_results=config.tool_search_max_results,
+                tool_search_threshold=config.tool_search_threshold,
             )
         )
     except ValueError as e:
@@ -243,8 +255,10 @@ def main():
 def setup_signal_handlers() -> None:
     """
     Set up signal handlers for graceful shutdown without sys.exit.
-    Modified from awslabs.openapi_mcp_server.server.setup_signal_handlers
-    Original version calls sys.exit in the handler which can cause issues.
+
+    Calling sys.exit from inside a signal handler raises SystemExit on whatever
+    frame happens to be executing, which can interrupt the event loop mid-await;
+    restoring the default handler and re-raising lets the runtime unwind.
     """
     handled = {"done": False}
 
@@ -254,10 +268,6 @@ def setup_signal_handlers() -> None:
         handled["done"] = True
 
         logger.debug("Received signal %s, shutting down gracefully...", sig)
-
-        # Log final metrics
-        summary = metrics.get_summary()
-        logger.info(f"Final metrics: {summary}")
 
         if sig == signal.SIGINT:
             logger.info("Process Interrupted, Shutting down gracefully...")

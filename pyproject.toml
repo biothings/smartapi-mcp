@@ -32,14 +32,15 @@ classifiers = [
 keywords = ["mcp", "smartapi", "api", "server", "bioinformatics"]
 requires-python = ">=3.10"
 dependencies = [
-    # awslabs 1.x is the release line built against fastmcp 3.x; both are pinned
-    # together because the two migrated in lockstep (fastmcp 3 replaced
-    # FastMCP.get_tools()/get_prompts() with list_tools()/list_prompts(), and
-    # awslabs 1.x switched to the new names).
-    # Upper bounds: fastmcp 4.x moves to the MCP 2.x SDK and httpx2, and no
-    # awslabs release supports it yet (awslabs 1.1.5 itself pins fastmcp<4).
-    "awslabs_openapi_mcp_server>=1.1.5,<2",
+    # Upper bound: fastmcp 4.x moves to the MCP 2.x SDK and httpx2, which this
+    # package has not been migrated to or tested against.
     "fastmcp>=3.3.1,<4",
+    # Spec fetching. Also a fastmcp[client] dependency, but declared here
+    # because smartapi_mcp.openapi and smartapi_mcp.smartapi import it directly.
+    "httpx>=0.28.1,<1",
+    # Logging. Kept after dropping awslabs_openapi_mcp_server, which supplied
+    # the preconfigured logger this package's modules were written against.
+    "loguru>=0.7.3,<1",
 ]
 
 [project.optional-dependencies]
@@ -94,7 +95,6 @@ asyncio_mode = "auto"
 [tool.coverage.run]
 source = ["smartapi_mcp"]
 omit = [
-    "smartapi_mcp/awslabs_server.py",
     "smartapi_mcp/__main__.py",
     "tests/*",
 ]
@@ -248,8 +248,5 @@ max-complexity = 10
 "tests/*" = ["PLR2004", "S101", "PT011", "PT012", "ARG002", "PT019"]
 # CLI module can use print statements and sys.exit
 "smartapi_mcp/cli.py" = ["T201", "PLR0913"]
-# Do not fix linting errors in awslabs_server.py as it's
-# based on the original codebase
-"smartapi_mcp/awslabs_server.py" = ["ALL"]
 # Allow star imports and unused imports in __init__.py
 "__init__.py" = ["F401", "F403", "F405"]

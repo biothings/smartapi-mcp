@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+
+- `smartapi_mcp/openapi.py`: `fetch_spec()`, `validate_spec()`,
+  `reject_external_refs()`, `resolve_internal_refs()` and
+  `build_openapi_server()`, replacing the awslabs loader, validator and server
+  builder. Specs are cached for an hour (the `--facade-strict` path loads a spec
+  to inspect it, then loads it again to build from it).
+- `smartapi_mcp/log.py`: the `logger` / `get_format()` that the other modules
+  previously imported from awslabs. Same loguru format, same stderr sink, same
+  default level, so log output is unchanged.
+
 - **`--tool-search auto` is now the default** (env `SMARTAPI_TOOL_SEARCH`). Search
   turns on once the merged server reaches `--tool-search-threshold` tools
   (default 50, env `TOOL_SEARCH_THRESHOLD`); smaller catalogs keep their direct
@@ -34,11 +44,82 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `tool_search` / `tool_search_max_results` / `tool_search_threshold` arguments on
   `build_server_for_set()`.
 
+### Changed
+
+- **`Config` is now a standalone dataclass** and no longer subclasses
+  `awslabs.openapi_mcp_server.api.config.Config`. It carries the 17 fields this
+  package reads; the ~35 inherited ones covered authentication schemes, Cognito,
+  tag filtering and multi-spec composition that SmartAPI's public APIs never
+  used. Code doing `isinstance(config, awslabs...Config)` will need updating.
+- `SERVER_HOST`, `SERVER_PORT`, `SERVER_TRANSPORT`, `API_SPEC_URL` and
+  `API_BASE_URL` are now read by this package's own `load_config` rather than
+  inherited from awslabs. The remaining awslabs environment variables
+  (`AUTH_*`, `INCLUDE_TAGS`, `EXCLUDE_TAGS`, `VALIDATE_OUTPUT`,
+  `ADDITIONAL_SPECS`, `API_SPEC_PATH`, `SERVER_DEBUG`,
+  `SERVER_MESSAGE_TIMEOUT`, `ALLOW_*`) are no longer recognised; none of them
+  affected this package's behaviour.
+- `tests/test_config.py` was rewritten against real behaviour. It previously
+  spent most of its length mocking the awslabs base config and the
+  `dataclasses.fields` copy loop, and asserted exact logger call strings; it now
+  covers defaults, environment parsing, integer/bool coercion, CLI precedence
+  and the malformed-value fallbacks. New `tests/test_openapi.py` covers the
+  replacement module offline via `httpx.MockTransport`, including the ref-cycle,
+  depth-cut, SSRF-refusal, retry and cache paths. Test count 122 → 183.
+- Dropped two stale `pyproject.toml` references to `smartapi_mcp/awslabs_server.py`,
+  a file that has not existed for several releases.
+
+- **Migrated to `fastmcp` 3.x and `awslabs_openapi_mcp_server` 1.x.** Both pins
+  moved together (`fastmcp>=3.3.1,<4`, `awslabs_openapi_mcp_server>=1.1.5,<2`)
+  because the two projects migrated in lockstep. The 2.x/0.2.x lines are no
+  longer maintained upstream (last releases 2026-04-13 and 2026-03-27).
+- `_merge_servers_into()` now uses `FastMCP.list_tools()` / `list_prompts()`,
+  which replaced the dict-returning `get_tools()` / `get_prompts()` in fastmcp
+  3.x. Merged tool/prompt names, the 64-character cap, and collision handling
+  are unchanged.
+- Merge tests now build real `Tool` / `Prompt` objects instead of `MagicMock`s:
+  fastmcp 3's `add_tool()` coerces non-`Tool` inputs via `Tool.from_function()`,
+  which rejects mocks. This closes a gap where the old tests could not have
+  caught a malformed component being registered.
+
 ### Fixed
+
+- **Response `$ref`s are now resolved for tool descriptions.** fastmcp resolves
+  references for the input schemas it generates but leaves them in the response
+  schemas it hands to the description formatter, so an operation whose response
+  is a `$ref` was documented as returning nothing in particular. awslabs papered
+  over this with prance, which fails on the recursive schemas TRAPI APIs use and
+  silently fell back to unresolved parsing. `resolve_internal_refs()` handles
+  them, which is why 3 of the 30 measured APIs gained description detail
+  (ClinGen: 16,910 → 22,062 characters).
+  Only the *description* path uses the resolved copy; the pristine spec still
+  goes to fastmcp, so shared and recursive definitions stay behind `$defs`.
+  Pre-resolving the whole spec instead inflated one TRAPI tool's input schema
+  from 67 KB to 115 KB.
+- **`--tool-search-threshold` had no effect.** The flag and its
+  `TOOL_SEARCH_THRESHOLD` environment variable were parsed into `Config` but
+  never passed to `build_server_for_set()`, so the threshold was always the
+  50-tool default no matter what was configured.
+- **`--port` was ignored, and would have shadowed `SERVER_PORT` if wired up.**
+  `load_config` never read `args.port` or `args.host`, so only the environment
+  variables worked; and `--port`'s argparse default of `8000` would have
+  overwritten `SERVER_PORT` on every run once it was read (the same bug class
+  fixed for `--facade` / `--tool-search` earlier in this release). Both flags now
+  work, with CLI > environment > default precedence, and `--port`'s default is
+  `None`.
+- An unusable spec now raises instead of being logged as
+  "validation failed, but continuing anyway" and passed on regardless.
+  `build_api_servers()` already catches per-API failures and skips that API with
+  a warning, so the caller gets a clean skip rather than a spec that fastmcp will
+  choke on later. `SpecError` subclasses `ValueError`, so existing handlers still
+  catch it.
+- A 4xx spec fetch is no longer retried three times with exponential backoff. An
+  unknown SmartAPI id returns 404 on every attempt, so the retries only added
+  ~3 s per bad id when building a large set.
+
 - **A single unloadable API no longer aborts the whole server.** Per-API servers
   were built with a bare list comprehension, so one bad spec took down every
   other API in the set. About one in six of the registry's uptime-passing APIs
-  fails to load -- external `$ref`s (refused by awslabs 1.x as an SSRF guard),
+  fails to load -- external `$ref`s (refused as an SSRF guard),
   invalid OpenAPI schemas, missing `servers` blocks -- which made
   `--smartapi_q '_status.uptime_status:pass'` impossible to start at all. Those
   APIs are now skipped with a warning and a summary count, and the rest are
@@ -56,19 +137,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Config`, so precedence is CLI > environment > default. (`FACADE_STRICT` was
   unaffected: `store_true` defaults to `False`, which is falsy.)
 
-### Changed
-- **Migrated to `fastmcp` 3.x and `awslabs_openapi_mcp_server` 1.x.** Both pins
-  moved together (`fastmcp>=3.3.1,<4`, `awslabs_openapi_mcp_server>=1.1.5,<2`)
-  because the two projects migrated in lockstep. The 2.x/0.2.x lines are no
-  longer maintained upstream (last releases 2026-04-13 and 2026-03-27).
-- `_merge_servers_into()` now uses `FastMCP.list_tools()` / `list_prompts()`,
-  which replaced the dict-returning `get_tools()` / `get_prompts()` in fastmcp
-  3.x. Merged tool/prompt names, the 64-character cap, and collision handling
-  are unchanged.
-- Merge tests now build real `Tool` / `Prompt` objects instead of `MagicMock`s:
-  fastmcp 3's `add_tool()` coerces non-`Tool` inputs via `Tool.from_function()`,
-  which rejects mocks. This closes a gap where the old tests could not have
-  caught a malformed component being registered.
+### Removed
+
+- **Dropped the `awslabs_openapi_mcp_server` dependency.** By its 1.x line that
+  package had converged on being a thin wrapper over `FastMCP.from_openapi()`,
+  so `smartapi_mcp/openapi.py` now calls fastmcp directly. Verified against the
+  old path on 30 uptime-passing registry APIs: all 28 loadable APIs produce
+  **identical tool names and input schemas**, 25 have byte-identical
+  descriptions and 3 have *richer* ones (see below); the 2 that fail, fail on
+  both paths for the same reasons. Removes ~24 MB of transitive dependencies,
+  dominated by boto3/botocore (20 MB), which were pulled in only for a Cognito
+  auth provider this package never used — and which no longer even imported
+  cleanly in a fresh 3.14 environment. Also drops prance, bcrypt,
+  openapi-spec-validator, cachetools, tenacity, ruamel.yaml and chardet.
+  `httpx` and `loguru` become direct dependencies (both were already installed
+  transitively).
+- **Per-operation MCP prompts are no longer generated.** The awslabs wrapper
+  emitted one prompt per operation for specs carrying `operationId`s — 10 of the
+  30 APIs measured, all non-BioThings — and each prompt restated its own tool's
+  name, method, path, parameters and response codes. Beyond being redundant,
+  prompts are *not* collapsed by `--tool-search` (the transform filters
+  `tools/list` only), so on a large set they were context cost that search could
+  not hide. **This changes behaviour** for sets containing such APIs:
+  `prompts/list` is now empty.
+- Several awslabs features were never reachable and are simply gone: a
+  `health_check` tool that was defined but never registered, an API resource
+  handler registered against a `server.register_resource_handler` hook that
+  FastMCP does not have, route maps forcing GET-with-query-params to
+  `MCPType.TOOL` (fastmcp 3 already defaults every route to a tool), five unused
+  auth providers, and a metrics registry that only awslabs' own
+  `make_request_with_retry` recorded to — so the "Final metrics" line logged on
+  shutdown was always an empty summary. That line is removed.
 
 ## [0.3.2] - 2026-06-17
 
