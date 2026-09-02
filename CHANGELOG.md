@@ -5,7 +5,7 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.5.0] - 2026-09-02
 
 ### Added
 
@@ -41,7 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   covers defaults, environment parsing, integer/bool coercion, CLI precedence
   and the malformed-value fallbacks. New `tests/test_openapi.py` covers the
   replacement module offline via `httpx.MockTransport`, including the ref-cycle,
-  depth-cut, SSRF-refusal, retry and cache paths. Test count 122 → 183.
+  depth-cut, SSRF-refusal, retry and cache paths. Test count 143 → 208.
 
 - Dropped two stale `pyproject.toml` references to `smartapi_mcp/awslabs_server.py`,
   a file that has not existed for several releases.
