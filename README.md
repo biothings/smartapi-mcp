@@ -19,9 +19,10 @@ Earlier releases (through 0.3.2) wrapped the [AWS Labs OpenAPI MCP Server](https
 
 - Python 3.10 or higher
 - Network access to SmartAPI registry (https://smart-api.info)
-- Dependencies: `fastmcp>=3.3.1,<4`, `httpx`, `loguru` (fastmcp 4.x is not yet
-  supported — it moves to the MCP 2.x SDK and `httpx2`; see the dependency notes
-  in `pyproject.toml`)
+- Dependencies: `fastmcp>=4.0.1,<5`, `httpx2`, `loguru`. fastmcp 4.x uses the
+  MCP 2.x SDK and [httpx2](https://github.com/pydantic/httpx2) (a continuation
+  of httpx under a new package name), so this package imports `httpx2` rather
+  than `httpx`. For fastmcp 3.x, use smartapi-mcp 0.5.0.
 
 ## Features
 

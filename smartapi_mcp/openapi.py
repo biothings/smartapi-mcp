@@ -35,7 +35,7 @@ import json
 import time
 from typing import Any
 
-import httpx
+import httpx2
 from fastmcp import FastMCP
 from fastmcp.utilities.openapi import format_description_with_responses
 
@@ -208,21 +208,21 @@ def fetch_spec(url: str, *, use_cache: bool = True) -> dict[str, Any]:
     last_error: Exception | None = None
     for attempt in range(SPEC_FETCH_ATTEMPTS):
         try:
-            with httpx.Client(
+            with httpx2.Client(
                 timeout=SPEC_FETCH_TIMEOUT, follow_redirects=True
             ) as client:
                 response = client.get(url)
                 response.raise_for_status()
                 content = response.content
             break
-        except httpx.HTTPStatusError as exc:
+        except httpx2.HTTPStatusError as exc:
             # A 4xx is a property of the request, not a transient fault: an
             # unknown SmartAPI id returns 404 on every attempt, so retrying it
             # only adds backoff delay to a failure that is already decided.
             if exc.response.status_code < HTTP_SERVER_ERROR:
                 raise
             last_error = exc
-        except httpx.HTTPError as exc:
+        except httpx2.HTTPError as exc:
             last_error = exc
 
         if attempt < SPEC_FETCH_ATTEMPTS - 1:
@@ -419,7 +419,7 @@ def build_openapi_server(
     logger.debug(f"Building MCP server '{name}' for API base URL: {base_url}")
     return FastMCP.from_openapi(
         openapi_spec=spec_for_fastmcp,
-        client=httpx.AsyncClient(base_url=base_url, timeout=timeout),
+        client=httpx2.AsyncClient(base_url=base_url, timeout=timeout),
         name=name,
         mcp_component_fn=enrich_component,
         validate_output=validate_output,

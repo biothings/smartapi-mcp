@@ -32,12 +32,14 @@ classifiers = [
 keywords = ["mcp", "smartapi", "api", "server", "bioinformatics"]
 requires-python = ">=3.10"
 dependencies = [
-    # Upper bound: fastmcp 4.x moves to the MCP 2.x SDK and httpx2, which this
-    # package has not been migrated to or tested against.
-    "fastmcp>=3.3.1,<4",
-    # Spec fetching. Also a fastmcp[client] dependency, but declared here
-    # because smartapi_mcp.openapi and smartapi_mcp.smartapi import it directly.
-    "httpx>=0.28.1,<1",
+    # fastmcp 4.x moves to the MCP 2.x SDK and httpx2. Upper bound because 5.x
+    # does not exist yet and its breaking changes are unknown.
+    "fastmcp>=4.0.1,<5",
+    # Spec fetching and the API clients handed to FastMCP.from_openapi, whose
+    # `client` parameter is typed httpx2.AsyncClient in 4.x. Also a
+    # fastmcp[client] dependency, but declared here because smartapi_mcp.openapi,
+    # .smartapi and .biothings import it directly.
+    "httpx2>=2.5,<3",
     # Logging. Kept after dropping awslabs_openapi_mcp_server, which supplied
     # the preconfigured logger this package's modules were written against.
     "loguru>=0.7.3,<1",

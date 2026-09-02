@@ -5,6 +5,42 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- **Migrated to `fastmcp` 4.x and `httpx2`.** fastmcp 4 moves to the MCP 2.x SDK
+  and replaces `httpx` with [`httpx2`](https://github.com/pydantic/httpx2), a
+  continuation of httpx under a new package name; `FastMCP.from_openapi()` types
+  its `client` parameter as `httpx2.AsyncClient`. Pins are now
+  `fastmcp>=4.0.1,<5` and `httpx2>=2.5,<3`, and `smartapi_mcp.openapi`,
+  `.smartapi` and `.biothings` import `httpx2` directly.
+  **If you construct clients yourself and hand them to this package, they must
+  now be `httpx2` clients.** Everything we use from httpx exists in httpx2 under
+  the same names, with the same exception hierarchy (`HTTPStatusError`,
+  `ConnectError`, `TimeoutException` and `TransportError` all still subclass
+  `HTTPError`, which the spec-fetch retry logic depends on), so the migration
+  was a module rename rather than a rewrite. For fastmcp 3.x, use 0.5.0.
+- Every fastmcp API this package uses survives 4.x at an unchanged import path:
+  `FastMCP.from_openapi`, `fastmcp.client.Client`, `fastmcp.tools.Tool`,
+  `fastmcp.prompts.Prompt`, `fastmcp.utilities.openapi.format_description_with_responses`
+  and the `fastmcp.server.transforms.search` transforms.
+
+### Fixed
+- Nothing in this release; it is a dependency migration. Verified against a
+  recording of the fastmcp 3 output over the same 107 uptime-passing registry
+  APIs (`scripts/check_spec_parity.py`): the same **92 APIs build**, no tool
+  names change, no descriptions change, and there are **no structural
+  regressions**. 401 of 592 input schemas are byte-identical; the other 191
+  differ only by additions, dominated by **244 `example` values** that fastmcp 3
+  omitted from input schemas.
+  Two tools on one API (Aragorn TRAPI) additionally have their request body
+  **flattened**: where fastmcp 3 exposed a single nested `request` object
+  parameter, 4.x names each body field individually (`message`, `log_level`,
+  `workflow`, ...), which is easier for a model to fill in. The wire format is
+  unchanged -- the JSON body is still sent nested as the API expects -- and a
+  test now pins both halves of that, since it is fastmcp behaviour we depend on
+  rather than something this package controls.
+
 ## [0.5.0] - 2026-09-02
 
 ### Added

@@ -6,7 +6,7 @@ Handles interaction with the SmartAPI registry.
 
 import re
 
-import httpx
+import httpx2
 
 from .openapi import fetch_spec
 
@@ -38,7 +38,7 @@ async def get_smartapi_registry(
         "size": 500,
         "raw": 1,
     }
-    async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
+    async with httpx2.AsyncClient(timeout=HTTP_TIMEOUT) as client:
         response = await client.get(smartapi_query_url, params=params)
         response.raise_for_status()
         data = response.json()

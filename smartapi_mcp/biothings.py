@@ -16,7 +16,7 @@ import math
 import re
 from dataclasses import dataclass, field
 
-import httpx
+import httpx2
 from fastmcp import FastMCP
 from fastmcp.tools import Tool
 
@@ -476,7 +476,7 @@ def build_biothings_facade(
         return entry
 
     async def _request(method: str, url: str, **kwargs) -> dict | list:
-        async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
+        async with httpx2.AsyncClient(timeout=HTTP_TIMEOUT) as client:
             response = await client.request(method, url, **kwargs)
             response.raise_for_status()
             return response.json()
