@@ -72,6 +72,10 @@ SPEC_FETCH_TIMEOUT = 30.0
 # the request itself is at fault and will fail identically on every attempt.
 HTTP_SERVER_ERROR = 500
 
+# References under this pointer are left for fastmcp to resolve; see
+# :func:`build_openapi_server`.
+SCHEMA_REF_PREFIX = "#/components/schemas/"
+
 # Depth at which :func:`resolve_internal_refs` stops expanding. Recursive
 # schemas (TRAPI's ``Attribute`` contains a list of ``Attribute``) would
 # otherwise expand forever; the cycle check catches direct recursion and this
@@ -246,20 +250,30 @@ def fetch_spec(url: str, *, use_cache: bool = True) -> dict[str, Any]:
 
 
 def resolve_internal_refs(
-    spec: dict[str, Any], *, max_depth: int = MAX_REF_DEPTH
+    spec: dict[str, Any],
+    *,
+    max_depth: int = MAX_REF_DEPTH,
+    skip_prefixes: tuple[str, ...] = (),
 ) -> dict[str, Any]:
     """Return a copy of ``spec`` with in-document ``$ref``s inlined.
 
-    Only used to feed the description formatter (see
-    :func:`build_openapi_server`). fastmcp resolves references for the *input*
-    schemas it generates, but the response schemas it hands to the formatter keep
-    their ``$ref``s, so an operation whose response is a ``$ref`` would be
-    documented as returning nothing in particular.
+    References whose pointer starts with any of ``skip_prefixes`` are left
+    untouched. :func:`build_openapi_server` uses that to resolve everything
+    *except* ``#/components/schemas/``, because fastmcp handles schema
+    references itself (and better -- it hoists shared and recursive ones into
+    ``$defs``) but silently ignores ``$ref``s at the parameter, request-body and
+    response *object* level, which would drop those parameters entirely.
 
     Recursion is cut two ways: a reference already being expanded on the current
     branch resolves to ``{}``, and expansion stops at ``max_depth``. Both yield
     an empty schema rather than looping, which the formatter renders as "no
     documented properties" -- the same outcome as not resolving at all.
+
+    Sibling keys alongside a ``$ref`` override the referenced target, per JSON
+    Schema. That matters: prance (which the awslabs loader used) discarded them,
+    so a field documented as ``{"$ref": ".../CURIE", "description": "...",
+    "example": "..."}`` lost its specific description and example in favour of
+    the generic one on ``CURIE``.
 
     ``spec`` is not modified. A dangling reference is left in place rather than
     raising, since a partly-documented description beats no server at all.
@@ -276,7 +290,11 @@ def resolve_internal_refs(
     def walk(node: Any, seen: frozenset[str], depth: int) -> Any:
         if isinstance(node, dict):
             ref = node.get("$ref")
-            if isinstance(ref, str) and ref.startswith("#"):
+            if (
+                isinstance(ref, str)
+                and ref.startswith("#")
+                and not ref.startswith(skip_prefixes)
+            ):
                 if ref in seen or depth >= max_depth:
                     return {}
                 try:
@@ -349,13 +367,23 @@ def build_openapi_server(
     prefix -- so callers should pass the spec's ``info.title``, as the awslabs
     wrapper did.
 
-    Descriptions are enriched with parameter, request-body and response detail
-    using fastmcp's own :func:`format_description_with_responses`, the same
-    formatter the awslabs wrapper delegated to. Response schemas are swapped for
-    ref-resolved copies first; the spec handed to fastmcp is left pristine so
-    that fastmcp still hoists shared definitions into ``$defs`` when generating
-    input schemas. Resolving the whole spec up front instead would defeat that
-    hoisting and roughly double the size of a large input schema.
+    Two differently-resolved copies of ``spec`` are used, because fastmcp splits
+    the work with us:
+
+    * The copy handed to fastmcp has every internal ``$ref`` inlined **except**
+      those into ``#/components/schemas/``. fastmcp resolves schema references
+      itself and does it better -- shared and recursive ones are hoisted into
+      ``$defs`` instead of being duplicated, which on a TRAPI API is the
+      difference between a 67 KB and a 115 KB input schema. But it silently
+      ignores ``$ref``s at the parameter / request-body / response *object*
+      level, so those must be inlined here or the parameters vanish (measured on
+      MyTaxon.info: a ``$ref``-ed ``callback`` parameter arrived as ``{}``).
+    * A fully-resolved copy feeds the description formatter, so an operation
+      whose response is a ``$ref`` is documented with the properties it actually
+      returns.
+
+    Descriptions are otherwise enriched exactly as the awslabs wrapper did, by
+    fastmcp's own :func:`format_description_with_responses`.
 
     No prompts are generated. The awslabs wrapper emitted one prompt per
     operation for specs carrying ``operationId``s, restating the tool's own name,
@@ -364,6 +392,8 @@ def build_openapi_server(
     so on a large set they were context cost that search could not hide.
     """
     resolved = _response_schemas_by_route(resolve_internal_refs(spec))
+    # Leave schema references for fastmcp; inline the rest. See the docstring.
+    spec_for_fastmcp = resolve_internal_refs(spec, skip_prefixes=(SCHEMA_REF_PREFIX,))
 
     def enrich_component(route: Any, component: Any) -> None:
         responses = route.responses or {}
@@ -388,7 +418,7 @@ def build_openapi_server(
 
     logger.debug(f"Building MCP server '{name}' for API base URL: {base_url}")
     return FastMCP.from_openapi(
-        openapi_spec=spec,
+        openapi_spec=spec_for_fastmcp,
         client=httpx.AsyncClient(base_url=base_url, timeout=timeout),
         name=name,
         mcp_component_fn=enrich_component,

@@ -13,7 +13,7 @@ The SmartAPI MCP Server enables integration between MCP-compatible clients and A
 
 Built directly on [FastMCP](https://github.com/jlowin/fastmcp), this project extends MCP support to the extensive collection of APIs available in the SmartAPI registry, with special focus on bioinformatics and life sciences APIs.
 
-Earlier releases (through 0.3.2) wrapped the [AWS Labs OpenAPI MCP Server](https://github.com/awslabs/openapi-mcp-server); parts of `smartapi_mcp/openapi.py` are derived from that project's Apache-2.0 code.
+Earlier releases (through 0.3.2) wrapped the [AWS Labs OpenAPI MCP Server](https://github.com/awslabs/openapi-mcp-server); parts of `smartapi_mcp/openapi.py` are derived from that project's Apache-2.0 code. Dropping that wrapper reduced a clean install from 87 packages / 91 MB to 68 / 56 MB.
 
 ## Requirements
 

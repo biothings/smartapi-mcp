@@ -73,8 +73,15 @@ def report(current: dict[str, Any], baseline: dict[str, Any] | None) -> int:
         return 0
 
     print("\n--- vs baseline ---")
+    # Only structural losses count as regressions. Description and schema text
+    # legitimately *changes* between implementations -- e.g. honouring JSON
+    # Schema sibling precedence over a $ref yields the spec's own specific
+    # description and example instead of the generic one on the referenced
+    # target, which can be either longer or shorter. Byte length is too crude a
+    # proxy for "worse", so those are reported for review, not failed on.
     regressions: list[str] = []
-    identical = richer = poorer = 0
+    changed: list[str] = []
+    identical = 0
     for sid, want in baseline.items():
         got = current.get(sid)
         if got is None:
@@ -95,26 +102,29 @@ def report(current: dict[str, Any], baseline: dict[str, Any] | None) -> int:
             continue
         for name, want_tool in want["tools"].items():
             got_tool = got["tools"][name]
+            diffs = []
             if got_tool["parameters"] != want_tool["parameters"]:
-                regressions.append(f"{sid}/{name}: input schema differs")
+                diffs.append("input schema")
             delta = got_tool["description_len"] - want_tool["description_len"]
-            if delta == 0:
-                identical += 1
-            elif delta > 0:
-                richer += 1
+            if delta:
+                diffs.append(f"description {delta:+d} chars")
+            if diffs:
+                changed.append(f"{sid}/{name}: {', '.join(diffs)}")
             else:
-                poorer += 1
-                regressions.append(
-                    f"{sid}/{name}: description shorter by {-delta} chars"
-                )
+                identical += 1
 
-    print(f"  descriptions: {identical} identical, {richer} richer, {poorer} shorter")
+    total = identical + len(changed)
+    print(f"  tools compared: {total}  identical: {identical}  changed: {len(changed)}")
+    if changed:
+        print("\n  changed (review, not failures):")
+        for line in changed:
+            print(f"    {line}")
     if regressions:
         print(f"\n  {len(regressions)} REGRESSION(S):")
         for line in regressions:
             print(f"    {line}")
         return 1
-    print("  no regressions")
+    print("\n  no structural regressions")
     return 0
 
 

@@ -89,12 +89,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is a `$ref` was documented as returning nothing in particular. awslabs papered
   over this with prance, which fails on the recursive schemas TRAPI APIs use and
   silently fell back to unresolved parsing. `resolve_internal_refs()` handles
-  them, which is why 3 of the 30 measured APIs gained description detail
-  (ClinGen: 16,910 → 22,062 characters).
+  them, which accounts for 33 of the 45 changed tools across 6 APIs — every one
+  of them longer (ClinGen: +426 to +642 characters per tool; one Translator
+  status endpoint +1,637).
   Only the *description* path uses the resolved copy; the pristine spec still
   goes to fastmcp, so shared and recursive definitions stay behind `$defs`.
   Pre-resolving the whole spec instead inflated one TRAPI tool's input schema
   from 67 KB to 115 KB.
+- **`$ref`s standing in for a whole Parameter Object are now inlined.** fastmcp
+  resolves references *inside* schemas but ignores one used in place of an
+  entire Parameter / Request Body / Response Object, so such a parameter arrived
+  with an empty schema — MyTaxon.info's `callback` parameter came through as
+  `{}`, losing its type and description. The awslabs loader avoided this only
+  incidentally, by pre-resolving the whole document with prance.
+  `build_openapi_server()` now inlines every internal `$ref` *except*
+  `#/components/schemas/` ones, which are left for fastmcp to hoist into
+  `$defs`.
+- **Sibling keys alongside a `$ref` now win over the referenced target**, as
+  JSON Schema specifies. prance discarded them, so a field written as
+  `{"$ref": ".../BiolinkEntity", "description": "Subject node category...",
+  "example": "biolink:ChemicalEntity"}` was documented with `BiolinkEntity`'s
+  generic description and example instead of its own. This accounts for 12 of
+  the 45 changed tools, all in the two BTE TRAPI APIs: 8 input schemas gained
+  per-field descriptions, examples and patterns, and 4 descriptions now quote
+  the spec's own example (which is 20 characters shorter than the generic one it
+  replaces).
+- **One unloadable API could still abort the entire server.** The per-API skip
+  added earlier in this release caught `Exception`, but
+  awslabs' `create_mcp_server_async` converted *every* spec error into
+  `sys.exit(1)` — a `SystemExit`, which `except Exception` does not catch. So
+  any spec that fastmcp itself rejected (e.g. an OpenAPI 3.0 document using
+  `"type": "null"`) still took down every other API in the set. Confirmed on the
+  registry's uptime-passing set, where it killed a 27-API build at API 17. Spec
+  failures are now ordinary exceptions and are skipped as intended.
 - **`--tool-search-threshold` had no effect.** The flag and its
   `TOOL_SEARCH_THRESHOLD` environment variable were parsed into `Config` but
   never passed to `build_server_for_set()`, so the threshold was always the
@@ -141,17 +168,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Dropped the `awslabs_openapi_mcp_server` dependency.** By its 1.x line that
   package had converged on being a thin wrapper over `FastMCP.from_openapi()`,
-  so `smartapi_mcp/openapi.py` now calls fastmcp directly. Verified against the
-  old path on 30 uptime-passing registry APIs: all 28 loadable APIs produce
-  **identical tool names and input schemas**, 25 have byte-identical
-  descriptions and 3 have *richer* ones (see below); the 2 that fail, fail on
-  both paths for the same reasons. Removes ~24 MB of transitive dependencies,
-  dominated by boto3/botocore (20 MB), which were pulled in only for a Cognito
-  auth provider this package never used — and which no longer even imported
-  cleanly in a fresh 3.14 environment. Also drops prance, bcrypt,
-  openapi-spec-validator, cachetools, tenacity, ruamel.yaml and chardet.
-  `httpx` and `loguru` become direct dependencies (both were already installed
-  transitively).
+  so `smartapi_mcp/openapi.py` now calls fastmcp directly. Verified against a
+  recording of the old path over **107 of the registry's 108 uptime-passing
+  APIs** (`scripts/check_spec_parity.py`): 92 of 107 build, exactly as before,
+  with identical tool names and no API newly failing. Of the 592 resulting
+  tools, **547 are byte-identical**; the other 45 all gain detail rather than
+  lose it (see *Fixed* below). A clean install goes from **87 packages /
+  91 MB to 68 packages / 56 MB** — 18 transitive dependencies removed and none
+  added. The largest is boto3/botocore (20 MB), pulled in only for a Cognito
+  auth provider this package never used, and which no longer even imported
+  cleanly in a fresh 3.14 environment. Also gone: prance, ruamel.yaml, bcrypt,
+  openapi-spec-validator, openapi-schema-validator, tenacity, requests,
+  urllib3, chardet, charset-normalizer, jmespath, s3transfer, python-dateutil,
+  rfc3339-validator, lazy-object-proxy and six. `httpx` and `loguru` become
+  direct dependencies; both were already installed transitively, so neither is
+  a new download.
 - **Per-operation MCP prompts are no longer generated.** The awslabs wrapper
   emitted one prompt per operation for specs carrying `operationId`s — 10 of the
   30 APIs measured, all non-BioThings — and each prompt restated its own tool's

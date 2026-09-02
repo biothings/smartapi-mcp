@@ -516,3 +516,57 @@ class TestBuildOpenapiServer:
         inlined_child = node["properties"]["children"]["items"]
         assert inlined_child["type"] == "object"  # one level expanded...
         assert inlined_child["properties"]["children"]["items"] == {}  # ...then cut
+
+    @pytest.mark.asyncio
+    async def test_parameter_level_refs_are_inlined_for_fastmcp(self):
+        """fastmcp ignores $refs at the parameter object level, dropping them.
+
+        Regression test. fastmcp resolves references inside *schemas* but not a
+        ``$ref`` standing in for a whole Parameter Object, so a spec written
+        that way arrived with an empty schema for that parameter -- measured on
+        MyTaxon.info, whose ``callback`` parameter came through as ``{}``. The
+        awslabs loader happened to avoid this by pre-resolving everything with
+        prance. build_openapi_server now inlines every internal $ref *except*
+        schema ones before handing the spec over.
+        """
+        spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Param Ref API", "version": "1.0"},
+            "servers": [{"url": "https://api.example.com"}],
+            "paths": {
+                "/thing": {
+                    "get": {
+                        "parameters": [{"$ref": "#/components/parameters/callback"}],
+                        "responses": {"200": {"description": "OK"}},
+                    }
+                }
+            },
+            "components": {
+                "parameters": {
+                    "callback": {
+                        "name": "callback",
+                        "in": "query",
+                        "description": "make a JSONP call",
+                        "schema": {"type": "string"},
+                    }
+                }
+            },
+        }
+        server = build_openapi_server(spec, "https://api.example.com", "Param Ref API")
+        schema = (await server.list_tools())[0].parameters
+        callback = schema["properties"]["callback"]
+        assert callback.get("type") == "string"
+        assert "JSONP" in callback.get("description", "")
+
+    def test_skip_prefixes_leaves_matching_refs_alone(self):
+        spec = {
+            "a": {"$ref": "#/components/schemas/X"},
+            "b": {"$ref": "#/components/parameters/Y"},
+            "components": {
+                "schemas": {"X": {"type": "string"}},
+                "parameters": {"Y": {"name": "y", "in": "query"}},
+            },
+        }
+        out = resolve_internal_refs(spec, skip_prefixes=("#/components/schemas/",))
+        assert out["a"] == {"$ref": "#/components/schemas/X"}
+        assert out["b"] == {"name": "y", "in": "query"}
