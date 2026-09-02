@@ -15,6 +15,7 @@ from unittest.mock import patch
 import pytest
 
 from smartapi_mcp.config import Config, load_config
+from smartapi_mcp.server import TOOL_SEARCH_AUTO_THRESHOLD
 
 # Every environment variable load_config reads. Cleared before each test so a
 # developer's shell (or another test) cannot influence the result.
@@ -72,7 +73,7 @@ class TestConfig:
         assert config.facade_strict is False
         assert config.tool_search == "auto"
         assert config.tool_search_max_results == 10
-        assert config.tool_search_threshold == 50
+        assert config.tool_search_threshold == TOOL_SEARCH_AUTO_THRESHOLD
 
     def test_carries_only_the_fields_that_are_read(self):
         """Guard against the 40-field awslabs base class creeping back.

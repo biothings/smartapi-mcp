@@ -299,8 +299,28 @@ class TestAutoMode:
         assert await listed_names(server) == set()
 
     @pytest.mark.asyncio
-    async def test_default_threshold_leaves_a_typical_preset_listed(self):
-        """biothings_core is ~30 tools and should stay directly listed."""
+    async def test_default_threshold_collapses_a_30_tool_preset(self):
+        """A 30-tool per-API server collapses under the default threshold.
+
+        ``biothings_core --facade off`` is 30 tools, which measures ~31k tokens
+        of ``tools/list`` payload -- the case the default is chosen to catch.
+        """
         server = build_big_server(30)
         await apply_tool_search(server, "auto")
-        assert len(await listed_names(server)) == 30
+        assert await listed_names(server) == {"search_tools", "call_tool"}
+
+    @pytest.mark.asyncio
+    async def test_default_threshold_leaves_a_single_api_listed(self):
+        """One API is ~6 tools and should still be listed directly.
+
+        The facade is ~5 tools, so both of the small common cases stay below
+        the default threshold and keep their directness.
+        """
+        server = build_big_server(6)
+        await apply_tool_search(server, "auto")
+        assert len(await listed_names(server)) == 6
+        assert "search_tools" not in await listed_names(server)
+
+    def test_default_threshold_value(self):
+        """Guard the tuned default. See the rationale on the constant."""
+        assert TOOL_SEARCH_AUTO_THRESHOLD == 15

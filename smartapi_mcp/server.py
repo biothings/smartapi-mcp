@@ -16,7 +16,12 @@ from fastmcp.server.transforms.search import (
 )
 
 # Import BioThings generic-facade builder
-from .biothings import build_biothings_facade, build_registry, partition_biothings
+from .biothings import (
+    build_biothings_facade,
+    build_registry,
+    is_biothings_family,
+    partition_biothings,
+)
 from .log import logger
 from .openapi import build_openapi_server
 
@@ -46,11 +51,20 @@ TOOL_SEARCH_MODES = ("auto", "off", "bm25", "regex")
 # caller to author a pattern and returns nothing (silently) if handed prose.
 TOOL_SEARCH_AUTO_MODE = "bm25"
 
-# Tool count at which "auto" turns search on. Per-API tool descriptions run a few
-# hundred tokens each, so a few dozen tools is already a five-figure token bill
-# for a listing the model mostly ignores; below that the full list is cheap
-# enough to be worth its directness.
-TOOL_SEARCH_AUTO_THRESHOLD = 50
+# Tool count at which "auto" turns search on.
+#
+# Measured over the registry's uptime-passing set (592 tools, 92 APIs), a single
+# entry in `tools/list` -- name plus the enriched description plus the JSON input
+# schema -- averages ~3,900 characters (~975 tokens), median ~1,270 (~320), p90
+# ~7,500, with one TRAPI tool at 84,000 (~21,000 tokens). At this threshold a
+# listing therefore costs roughly 5k tokens of median-sized tools or 15k of
+# mean-sized ones, which is a reasonable ceiling to pay before search is worth
+# its extra round trip.
+#
+# Note the 65x spread: tool *count* is a crude proxy for the thing we actually
+# care about, which is payload size. A byte/token budget would be the better
+# instrument and would make this constant a floor rather than the decision.
+TOOL_SEARCH_AUTO_THRESHOLD = 15
 
 
 async def apply_tool_search(
@@ -420,8 +434,13 @@ async def build_server_for_set(
 
     if facade != "off":
         registry = await build_registry(available_ids)
+        # TRAPI services carry the "biothings" tag but are not annotation APIs;
+        # is_biothings_family excludes them so they fall through to the
+        # non_biothings_ids branch below and get faithful per-API tools.
         biothings = {
-            name: entry for name, entry in registry.items() if "biothings" in entry.tags
+            name: entry
+            for name, entry in registry.items()
+            if is_biothings_family(entry)
         }
         if facade == "on" and not biothings:
             logger.warning(

@@ -12,6 +12,7 @@ from smartapi_mcp.biothings import (
     analyze_biothings_spec,
     build_biothings_facade,
     build_registry_from_entries,
+    is_biothings_family,
     is_biothings_registry,
     partition_biothings,
     rank_apis,
@@ -549,3 +550,110 @@ async def test_dispatcher_facade_off_forces_flat_even_when_large():
         )
     assert result is flat
     br.assert_not_called()  # facade=off skips the registry build entirely
+
+
+# --------------------------------------------------------------------------- #
+# BioThings family membership (facade eligibility)
+# --------------------------------------------------------------------------- #
+def _entry(*tags):
+    return BioThingsAPIEntry("x", "id", "X API", "desc", list(tags))
+
+
+class TestIsBioThingsFamily:
+    """Which APIs the generic facade may serve."""
+
+    def test_biothings_tag_alone_qualifies(self):
+        assert is_biothings_family(_entry("gene", "biothings")) is True
+
+    def test_missing_biothings_tag_disqualifies(self):
+        assert is_biothings_family(_entry("gene", "translator")) is False
+
+    def test_trapi_tag_disqualifies_despite_biothings_tag(self):
+        """TRAPI services are tagged biothings but are not annotation APIs.
+
+        BioThings Explorer and Service Provider speak the Translator Reasoner
+        query-graph protocol, so no generic facade tool applies to them. Left in
+        the facade, the entity-type inference matches BTE's
+        ``GET /asyncquery_status/{id}`` and ``biothings_get`` would return a job
+        status as though it were an annotation record.
+        """
+        assert is_biothings_family(_entry("biothings", "trapi")) is False
+
+    def test_tag_matching_is_case_and_space_insensitive(self):
+        assert is_biothings_family(_entry("BioThings", " TRAPI ")) is False
+        assert is_biothings_family(_entry(" BIOTHINGS ")) is True
+
+    def test_no_tags_disqualifies(self):
+        assert is_biothings_family(_entry()) is False
+
+    def test_registry_predicate_agrees(self):
+        assert is_biothings_registry({"a": _entry("biothings")}) is True
+        assert is_biothings_registry({"a": _entry("biothings", "trapi")}) is False
+
+
+class TestRankApis:
+    """The facade's API discovery ranking."""
+
+    def test_verbose_description_does_not_outrank_a_named_match(self):
+        """Regression: the old scorer summed substring counts, rewarding prose.
+
+        Searching "gene annotation" ranked MyGeneSet above MyGene because its
+        longer description mentioned the terms more often. Term frequency is now
+        binary and name/title hits are weighted, so the API named for the
+        concept wins.
+        """
+        registry = {
+            "mygene": BioThingsAPIEntry(
+                "mygene",
+                "1",
+                "MyGene.info API",
+                "gene annotation service",
+                ["gene", "annotation", "biothings"],
+            ),
+            "mygeneset": BioThingsAPIEntry(
+                "mygeneset",
+                "2",
+                "MyGeneSet.info API",
+                "gene set gene gene annotation gene annotation collections of "
+                "gene sets with gene annotation and gene annotation records",
+                ["geneset", "biothings"],
+            ),
+        }
+        ranked = [r["name"] for r in rank_apis(registry, "gene annotation")]
+        assert ranked[0] == "mygene"
+
+    def test_rare_terms_outweigh_common_ones(self):
+        """IDF: a term shared by every API should not drive the ranking."""
+        registry = {
+            "common_a": BioThingsAPIEntry(
+                "common_a", "1", "A API", "biothings annotation", ["biothings"]
+            ),
+            "ngd_api": BioThingsAPIEntry(
+                "ngd_api",
+                "2",
+                "B API",
+                "biothings annotation with ngd support",
+                ["biothings"],
+            ),
+        }
+        ranked = [r["name"] for r in rank_apis(registry, "biothings ngd")]
+        assert ranked[0] == "ngd_api"
+
+    def test_substring_matches_no_longer_count(self):
+        """The old scorer matched "id" inside "identifier"/"candidate"."""
+        registry = {
+            "a": BioThingsAPIEntry("a", "1", "A", "identifier candidate provider", []),
+        }
+        assert rank_apis(registry, "id") == []
+
+    def test_stopword_only_query_returns_the_full_catalog(self):
+        """Nothing discriminating left, so don't return an arbitrary subset."""
+        registry = _sample_registry()
+        ranked = rank_apis(registry, "what data is there in the api")
+        assert {r["name"] for r in ranked} == set(registry)
+
+    def test_scores_are_reported(self):
+        ranked = rank_apis(_sample_registry(), "disease")
+        assert ranked
+        assert ranked[0]["name"] == "mydisease"
+        assert ranked[0]["score"] > 0

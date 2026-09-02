@@ -52,7 +52,7 @@ class Config:
     # Tool-search transform
     tool_search: str = "auto"
     tool_search_max_results: int = 10
-    tool_search_threshold: int = 50
+    tool_search_threshold: int = 15
 
 
 def _parse_bool(value: str) -> bool:
@@ -90,7 +90,7 @@ def load_config(args: Any = None) -> Config:
             lambda v: setattr(config, "tool_search_max_results", _parse_int(v, 10))
         ),
         "TOOL_SEARCH_THRESHOLD": (
-            lambda v: setattr(config, "tool_search_threshold", _parse_int(v, 50))
+            lambda v: setattr(config, "tool_search_threshold", _parse_int(v, 15))
         ),
         "SERVER_NAME": (lambda v: setattr(config, "server_name", v)),
         "SERVER_HOST": (lambda v: setattr(config, "host", v)),
