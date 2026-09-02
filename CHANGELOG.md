@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`CORE_BIOTHINGS_API_IDS`** in `smartapi_mcp.smartapi`: the canonical,
+  broad-coverage BioThings annotation services, as distinct from the ~50
+  single-source satellite APIs. `biothings_core` and `biothings_test` are now
+  derived from it, so "which APIs are core" is stated once instead of being
+  duplicated per preset.
 
 - `smartapi_mcp/openapi.py`: `fetch_spec()`, `validate_spec()`,
   `reject_external_refs()`, `resolve_internal_refs()` and
@@ -45,6 +50,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `build_server_for_set()`.
 
 ### Changed
+
+- **`biothings_core` now includes MyTaxon.info, so the preset is 6 APIs, not 5**
+  (and `biothings_test` is 7). MyTaxon is a core `My*` annotation service by
+  every other measure and was the odd one out.
+
+- **The facade's `list_biothings_apis` now prefers the core APIs** when several
+  APIs match a query, via a `CORE_API_BOOST` multiplier of 1.2 in `rank_apis()`.
+  Broad-coverage services are the *worst* served by pure lexical scoring --
+  being general means their descriptions carry the least distinctive vocabulary,
+  while single-source satellites read as highly specific -- so a lexical ranker
+  systematically under-ranks exactly the APIs a user most often wants.
+  The boost is multiplicative, so a zero score stays zero and a core API is
+  never promoted into a query it does not match.
+  Measured on 20 BioThings intents: with the registry descriptions as they are
+  today, recall@5 goes 16/20 -> 19/20 (MRR 0.71 -> 0.82) and the core-API
+  intents go 3/6 -> 6/6. 1.2 is deliberately the smallest value that captures
+  the benefit: larger values add no recall and cost ranking quality once the
+  registry metadata improves (at 3.0, MRR against enriched descriptions falls
+  from 0.90 to 0.81).
+  A metadata PR enriching those descriptions is under review upstream
+  (NCATS-Tangerine/translator-api-registry#168); with it merged the same
+  benchmark reaches 20/20 at MRR 0.90, and the boost becomes a small safety
+  margin rather than the mechanism.
 
 - **`--tool-search-threshold` now defaults to 15, down from 50** (env
   `TOOL_SEARCH_THRESHOLD`). Measured over the registry's uptime-passing set

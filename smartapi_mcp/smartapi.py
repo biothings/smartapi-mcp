@@ -102,33 +102,34 @@ def get_base_server_url(api_spec: dict) -> str:
     return base_server_url
 
 
+# The core BioThings APIs: the canonical, broad-coverage annotation services,
+# as distinct from the ~50 single-source satellite APIs. Named because it serves
+# two purposes that must not drift apart -- the ``biothings_core`` preset (which
+# APIs to serve) and discovery ranking (which APIs to prefer when several match
+# a query, see ``CORE_API_BOOST`` in :mod:`smartapi_mcp.biothings`).
+CORE_BIOTHINGS_API_IDS = [
+    "59dce17363dce279d389100834e43648",  # MyGene.info
+    "09c8782d9f4027712e65b95424adba79",  # MyVariant.info
+    "8f08d1446e0bb9c2b323713ce83e2bd3",  # MyChem.info
+    "671b45c0301c8624abbd26ae78449ca2",  # MyDisease.info
+    "85139f4dccfcefa3ac3042372066916d",  # MyGeneSet.info
+    "f7943e6167166b3ea9e4b8be08f45fa6",  # MyTaxon.info
+]
+
+# SemmedDB, added to the "test" set for its non-standard /query/ngd endpoint.
+_SEMMEDDB_ID = "1d288b3a3caf75d541ffaae3aab386c8"
+
 PREDEFINED_API_SETS = ["biothings_core", "biothings_test", "biothings_all"]
 
 
 def get_predefined_api_set(api_set: str) -> dict:
     """Return the predefined API set for the given set name."""
     if api_set == "biothings_core":
-        return {
-            "smartapi_ids": [
-                "59dce17363dce279d389100834e43648",  # MyGene.info
-                "09c8782d9f4027712e65b95424adba79",  # MyVariant.info
-                "8f08d1446e0bb9c2b323713ce83e2bd3",  # MyChem.info
-                "671b45c0301c8624abbd26ae78449ca2",  # MyDisease.info
-                "85139f4dccfcefa3ac3042372066916d",  # MyGeneSet.info
-            ]
-        }
+        return {"smartapi_ids": list(CORE_BIOTHINGS_API_IDS)}
     if api_set == "biothings_test":
-        # biothings core APIs plus the SemmedDB API, useful for testings
-        return {
-            "smartapi_ids": [
-                "59dce17363dce279d389100834e43648",  # MyGene.info
-                "09c8782d9f4027712e65b95424adba79",  # MyVariant.info
-                "8f08d1446e0bb9c2b323713ce83e2bd3",  # MyChem.info
-                "671b45c0301c8624abbd26ae78449ca2",  # MyDisease.info
-                "85139f4dccfcefa3ac3042372066916d",  # MyGeneSet.info
-                "1d288b3a3caf75d541ffaae3aab386c8",  # SemmedDB
-            ]
-        }
+        # The core APIs plus SemmedDB, whose /query/ngd endpoint exercises the
+        # non-standard-endpoint handling.
+        return {"smartapi_ids": [*CORE_BIOTHINGS_API_IDS, _SEMMEDDB_ID]}
     if api_set == "biothings_all":
         # include all biothings APIs with a few excluded
         return {

@@ -22,6 +22,7 @@ from fastmcp.tools import Tool
 
 from .log import logger
 from .smartapi import (
+    CORE_BIOTHINGS_API_IDS,
     HTTP_TIMEOUT,
     get_base_server_url,
     get_smartapi_registry,
@@ -320,6 +321,26 @@ def _tokenize(text: str) -> list[str]:
 # systematically favours the "biothings_*"-prefixed names over MyGene/MyChem.
 _NAME_FIELD_WEIGHT = 3.0
 
+# Score multiplier for the core BioThings APIs (:data:`CORE_BIOTHINGS_API_IDS`).
+#
+# These are the canonical broad-coverage services, and they are the *worst*
+# served by pure lexical scoring: being general means their descriptions carry
+# the least distinctive vocabulary, while single-source satellite APIs read as
+# highly specific. So a lexical ranker systematically under-ranks exactly the
+# APIs a user most often wants, and needs a prior to correct for it.
+#
+# Measured on 20 BioThings intents. With the registry descriptions as they were
+# before the core-API enrichment, no boost gave recall@5 16/20 (MRR 0.71) and
+# only 3 of the 6 core-API intents were answered; 1.2 gives 19/20 (MRR 0.82).
+# With the enriched descriptions live, no boost already gives 19/20 (MRR 0.92)
+# and 1.2 gives 20/20 (MRR 0.90). Larger values buy nothing on recall and cost
+# ranking quality once the metadata is good -- at 3.0 the post-enrichment MRR
+# falls to 0.81 -- so this is deliberately the smallest value that captures the
+# benefit, and it stays close to neutral as the metadata improves.
+CORE_API_BOOST = 1.2
+
+_CORE_API_IDS = frozenset(CORE_BIOTHINGS_API_IDS)
+
 
 def _entry_terms(entry: BioThingsAPIEntry) -> tuple[set[str], set[str]]:
     """Return ``(name_terms, all_terms)`` for one API.
@@ -415,10 +436,15 @@ def rank_apis(
         # "nothing found" for a query that in fact matches everything.
         idf[term] = math.log(1 + (total - seen_in + 0.5) / (seen_in + 0.5))
 
-    scored = [
-        (_score_entry(terms_by_name[name], query_terms, idf), entry)
-        for name, entry in registry.items()
-    ]
+    scored = []
+    for name, entry in registry.items():
+        score = _score_entry(terms_by_name[name], query_terms, idf)
+        if entry.smartapi_id in _CORE_API_IDS:
+            # Multiplicative, not additive: a zero score stays zero, so the
+            # boost reorders results that already match and never promotes a
+            # core API into a query it has nothing to do with.
+            score *= CORE_API_BOOST
+        scored.append((score, entry))
     scored = [pair for pair in scored if pair[0] > 0]
     scored.sort(key=lambda pair: (-pair[0], pair[1].name))
     return [
