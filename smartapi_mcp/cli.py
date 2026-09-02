@@ -26,7 +26,7 @@ def main():
         "--api_set",
         help=(
             "A predefined set of SmartAPI APIs to include. One of: "
-            "'biothings_core' (5 core BioThings APIs), 'biothings_test' "
+            "'biothings_core' (the 6 core BioThings APIs), 'biothings_test' "
             "(core + SemmedDB), or 'biothings_all' (all BioThings APIs). "
             "[env: SMARTAPI_API_SET]"
         ),

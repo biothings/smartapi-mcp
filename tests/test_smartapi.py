@@ -7,6 +7,7 @@ from unittest.mock import patch
 import pytest
 
 from smartapi_mcp.smartapi import (
+    CORE_BIOTHINGS_API_IDS,
     PREDEFINED_API_SETS,
     get_base_server_url,
     get_predefined_api_set,
@@ -177,44 +178,50 @@ def test_load_api_spec_validation_success(mock_logger, mock_validate, mock_load)
     mock_logger.warning.assert_not_called()
 
 
+def test_core_biothings_api_ids():
+    """The named core set: the canonical broad-coverage annotation APIs."""
+    assert len(CORE_BIOTHINGS_API_IDS) == 6
+    assert len(set(CORE_BIOTHINGS_API_IDS)) == 6, "duplicate id in the core set"
+    assert "f7943e6167166b3ea9e4b8be08f45fa6" in CORE_BIOTHINGS_API_IDS  # MyTaxon.info
+
+
 def test_get_predefined_api_set_biothings_core():
-    """Test get_predefined_api_set with biothings_core set."""
+    """biothings_core serves exactly the named core set."""
     result = get_predefined_api_set("biothings_core")
 
     assert "smartapi_ids" in result
     assert isinstance(result["smartapi_ids"], list)
-    assert len(result["smartapi_ids"]) == 5
-    # Verify the core APIs are included
+    assert result["smartapi_ids"] == list(CORE_BIOTHINGS_API_IDS)
     expected_ids = [
         "59dce17363dce279d389100834e43648",  # MyGene.info
         "09c8782d9f4027712e65b95424adba79",  # MyVariant.info
         "8f08d1446e0bb9c2b323713ce83e2bd3",  # MyChem.info
         "671b45c0301c8624abbd26ae78449ca2",  # MyDisease.info
         "85139f4dccfcefa3ac3042372066916d",  # MyGeneSet.info
+        "f7943e6167166b3ea9e4b8be08f45fa6",  # MyTaxon.info
     ]
     for expected_id in expected_ids:
         assert expected_id in result["smartapi_ids"]
 
 
-def test_get_predefined_api_set_biothings_test():
-    """Test get_predefined_api_set with biothings_test set."""
+def test_get_predefined_api_set_returns_a_copy():
+    """Callers must not be able to mutate the module-level core set."""
+    result = get_predefined_api_set("biothings_core")
+    result["smartapi_ids"].append("injected")
+    assert "injected" not in CORE_BIOTHINGS_API_IDS
 
+
+def test_get_predefined_api_set_biothings_test():
+    """biothings_test is the core set plus SemmedDB."""
     result = get_predefined_api_set("biothings_test")
 
     assert "smartapi_ids" in result
     assert isinstance(result["smartapi_ids"], list)
-    assert len(result["smartapi_ids"]) == 6
-    # Verify the test APIs are included (core + SemmedDB)
-    expected_ids = [
-        "59dce17363dce279d389100834e43648",  # MyGene.info
-        "09c8782d9f4027712e65b95424adba79",  # MyVariant.info
-        "8f08d1446e0bb9c2b323713ce83e2bd3",  # MyChem.info
-        "671b45c0301c8624abbd26ae78449ca2",  # MyDisease.info
-        "85139f4dccfcefa3ac3042372066916d",  # MyGeneSet.info
-        "1d288b3a3caf75d541ffaae3aab386c8",  # SemmedDB
-    ]
-    for expected_id in expected_ids:
+    assert len(result["smartapi_ids"]) == len(CORE_BIOTHINGS_API_IDS) + 1
+    for expected_id in CORE_BIOTHINGS_API_IDS:
         assert expected_id in result["smartapi_ids"]
+    # SemmedDB, whose /query/ngd endpoint exercises non-standard handling
+    assert "1d288b3a3caf75d541ffaae3aab386c8" in result["smartapi_ids"]
 
 
 def test_get_predefined_api_set_biothings_all():

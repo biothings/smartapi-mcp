@@ -8,6 +8,7 @@ from fastmcp.client import Client
 
 from smartapi_mcp import server
 from smartapi_mcp.biothings import (
+    CORE_API_BOOST,
     BioThingsAPIEntry,
     analyze_biothings_spec,
     build_biothings_facade,
@@ -17,6 +18,7 @@ from smartapi_mcp.biothings import (
     partition_biothings,
     rank_apis,
 )
+from smartapi_mcp.smartapi import CORE_BIOTHINGS_API_IDS
 
 
 # --------------------------------------------------------------------------- #
@@ -651,6 +653,56 @@ class TestRankApis:
         registry = _sample_registry()
         ranked = rank_apis(registry, "what data is there in the api")
         assert {r["name"] for r in ranked} == set(registry)
+
+    def test_core_apis_are_preferred_among_matching_results(self):
+        """A core API outranks a satellite when both match.
+
+        Broad-coverage services carry the least distinctive vocabulary, so pure
+        lexical scoring under-ranks exactly the APIs users most often want.
+        """
+        registry = {
+            "mygene": BioThingsAPIEntry(
+                "mygene",
+                CORE_BIOTHINGS_API_IDS[0],
+                "MyGene.info API",
+                "gene annotation",
+                ["gene", "biothings"],
+            ),
+            "satellite": BioThingsAPIEntry(
+                "satellite",
+                "not-a-core-id",
+                "Satellite API",
+                "gene annotation",
+                ["gene", "biothings"],
+            ),
+        }
+        ranked = [r["name"] for r in rank_apis(registry, "gene annotation")]
+        assert ranked[0] == "mygene"
+
+    def test_boost_does_not_promote_a_non_matching_core_api(self):
+        """The boost is multiplicative, so a zero score stays zero."""
+        registry = {
+            "mygene": BioThingsAPIEntry(
+                "mygene",
+                CORE_BIOTHINGS_API_IDS[0],
+                "MyGene.info API",
+                "gene annotation",
+                ["gene", "biothings"],
+            ),
+            "foodb": BioThingsAPIEntry(
+                "foodb",
+                "other-id",
+                "FooDB API",
+                "food composition and nutrient content",
+                ["food", "biothings"],
+            ),
+        }
+        ranked = [r["name"] for r in rank_apis(registry, "nutrient content")]
+        assert ranked == ["foodb"], "a core API was promoted into an unrelated query"
+
+    def test_boost_is_modest(self):
+        """Guard the tuned value; see the rationale on the constant."""
+        assert CORE_API_BOOST == 1.2
 
     def test_scores_are_reported(self):
         ranked = rank_apis(_sample_registry(), "disease")
