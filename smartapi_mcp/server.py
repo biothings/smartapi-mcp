@@ -224,7 +224,18 @@ async def build_api_servers(
     for sid in smartapi_ids:
         try:
             servers.append(await get_mcp_server(sid))
-        except Exception as exc:  # any spec problem is survivable, skip that API
+        # SystemExit is caught alongside Exception on purpose, as a guard
+        # against a dependency reporting an error by exiting the process rather
+        # than raising. The awslabs wrapper this package used through 0.4.0 did
+        # exactly that -- every spec error became sys.exit(1) from inside the
+        # library, which "except Exception" does not catch, so one spec that
+        # fastmcp rejected took down every other API in the set (it killed a
+        # 27-API build at API 17 against the registry's uptime-passing set).
+        # Nothing on this path does that any more, but the guard is a cheap
+        # invariant: no single API may abort the whole build. It is scoped to
+        # one call, so it cannot swallow a genuine interpreter exit, and Ctrl-C
+        # raises KeyboardInterrupt rather than SystemExit.
+        except (Exception, SystemExit) as exc:  # any spec problem is survivable
             reason = f"{type(exc).__name__}: {str(exc)[:200]}"
             failures.append((sid, reason))
             logger.warning(f"Skipping SmartAPI {sid}: {reason}")

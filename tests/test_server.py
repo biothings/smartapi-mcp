@@ -10,7 +10,7 @@ from fastmcp.prompts import Prompt
 from fastmcp.tools import Tool
 
 from smartapi_mcp import get_mcp_server, get_merged_mcp_server, merge_mcp_servers
-from smartapi_mcp.server import MAX_TOOL_NAME_LEN, _fit_name
+from smartapi_mcp.server import MAX_TOOL_NAME_LEN, _fit_name, build_api_servers
 from smartapi_mcp.smartapi import get_predefined_api_set
 
 test_api_id_1 = "59dce17363dce279d389100834e43648"  # MyGene.info
@@ -359,3 +359,51 @@ async def test_merge_mcp_servers_enforces_prompt_name_length_limit():
     assert len(prompts) == 1
     assert all(len(prompt.name) <= MAX_TOOL_NAME_LEN for prompt in prompts)
     assert len(long_prompt.name) <= MAX_TOOL_NAME_LEN
+
+
+class TestBuildApiServersFailureTolerance:
+    """One unloadable API must not take down the rest of the set."""
+
+    @pytest.mark.asyncio
+    async def test_skips_an_api_that_raises(self):
+        async def fake(sid):
+            if sid == "bad":
+                err_msg = "invalid OpenAPI schema"
+                raise ValueError(err_msg)
+            return FastMCP(sid)
+
+        with patch("smartapi_mcp.server.get_mcp_server", new=fake):
+            servers, failures = await build_api_servers(["ok1", "bad", "ok2"])
+        assert len(servers) == 2
+        assert [sid for sid, _ in failures] == ["bad"]
+        assert "ValueError" in failures[0][1]
+
+    @pytest.mark.asyncio
+    async def test_skips_an_api_that_calls_sys_exit(self):
+        """awslabs reports spec errors with sys.exit(1) from inside the library.
+
+        That raises SystemExit, which ``except Exception`` does not catch, so a
+        spec fastmcp itself rejects used to abort the whole build -- it killed a
+        27-API run at API 17 against the registry's uptime-passing set.
+        """
+
+        async def fake(sid):
+            if sid == "bad":
+                raise SystemExit(1)
+            return FastMCP(sid)
+
+        with patch("smartapi_mcp.server.get_mcp_server", new=fake):
+            servers, failures = await build_api_servers(["ok1", "bad", "ok2"])
+        assert len(servers) == 2, "SystemExit from one API lost the whole set"
+        assert [sid for sid, _ in failures] == ["bad"]
+        assert "SystemExit" in failures[0][1]
+
+    @pytest.mark.asyncio
+    async def test_all_good_apis_report_no_failures(self):
+        async def fake(sid):
+            return FastMCP(sid)
+
+        with patch("smartapi_mcp.server.get_mcp_server", new=fake):
+            servers, failures = await build_api_servers(["a", "b"])
+        assert len(servers) == 2
+        assert failures == []
