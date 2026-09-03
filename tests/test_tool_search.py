@@ -324,3 +324,108 @@ class TestAutoMode:
     def test_default_threshold_value(self):
         """Guard the tuned default. See the rationale on the constant."""
         assert TOOL_SEARCH_AUTO_THRESHOLD == 15
+
+
+class TestSearchToolDescription:
+    """The synthetic search tool must say what its index covers.
+
+    fastmcp's stock wording is "Search for tools using natural language", which
+    gives a model no way to know the pinned BioThings facade tools are *outside*
+    the index. Measured before this: ``search_tools("gene annotation by entrez
+    id")`` on the full working set returned QuickGO and BTE rather than
+    directing the caller at ``biothings_query``.
+    """
+
+    async def _search_tool(self, server):
+        return next(t for t in await server.list_tools() if t.name == "search_tools")
+
+    @pytest.mark.asyncio
+    async def test_description_states_how_many_tools_are_searchable(self):
+        server = build_big_server(30)
+        await apply_tool_search(server, "bm25")
+        description = (await self._search_tool(server)).description or ""
+        assert "30" in description
+        assert "call_tool" in description
+
+    @pytest.mark.asyncio
+    async def test_description_is_stable_across_calls(self):
+        """The transform rebuilds its synthetic tools on every list_tools()."""
+        server = build_big_server(20)
+        await apply_tool_search(server, "bm25")
+        first = (await self._search_tool(server)).description
+        second = (await self._search_tool(server)).description
+        assert first == second
+        assert "Search for tools using natural language" not in (first or "")
+
+    @pytest.mark.asyncio
+    async def test_facade_boundary_is_spelled_out_when_facade_tools_are_pinned(self):
+        server = build_big_server(20)
+        server.add_tool(
+            Tool.from_function(
+                lambda q="": q,
+                name="biothings_query",
+                description="Search a BioThings API.",
+            )
+        )
+        server.add_tool(
+            Tool.from_function(
+                lambda q="": q,
+                name="list_biothings_apis",
+                description="Discover BioThings APIs.",
+            )
+        )
+        await apply_tool_search(
+            server, "bm25", always_visible=["biothings_query", "list_biothings_apis"]
+        )
+        description = (await self._search_tool(server)).description or ""
+        # Names the excluded tools and the domains they own.
+        assert "list_biothings_apis" in description
+        assert "biothings_query" in description
+        for domain in ("gene", "variant", "chemical", "disease"):
+            assert domain in description
+        assert "not" in description.lower()
+
+    @pytest.mark.asyncio
+    async def test_no_facade_claim_when_nothing_is_pinned(self):
+        """Per-API-only servers have everything in the index; say nothing more."""
+        server = build_big_server(20)
+        await apply_tool_search(server, "bm25")
+        description = (await self._search_tool(server)).description or ""
+        assert "BioThings" not in description
+
+    @pytest.mark.asyncio
+    async def test_searchable_count_excludes_pinned_tools(self):
+        server = build_big_server(20)
+        server.add_tool(
+            Tool.from_function(lambda q="": q, name="biothings_query", description="d")
+        )
+        await apply_tool_search(server, "bm25", always_visible=["biothings_query"])
+        description = (await self._search_tool(server)).description or ""
+        assert "20" in description  # 21 tools - 1 pinned
+
+    @pytest.mark.parametrize("mode", ["bm25", "regex"])
+    @pytest.mark.asyncio
+    async def test_both_modes_get_the_description(self, mode):
+        server = build_big_server(20)
+        await apply_tool_search(server, mode)
+        description = (await self._search_tool(server)).description or ""
+        assert "20" in description
+
+    @pytest.mark.asyncio
+    async def test_search_and_call_tool_still_work(self):
+        """Overriding the description must not disturb the transform."""
+        server = build_server()
+        await apply_tool_search(server, "bm25", max_results=5)
+        result = await server.call_tool("search_tools", {"query": "variant by HGVS id"})
+        assert "myvariant_get_by_id" in result.content[0].text
+        result = await server.call_tool(
+            "call_tool", {"name": "mygene_get_by_id", "arguments": {"q": "1017"}}
+        )
+        assert "1017" in result.content[0].text
+
+    @pytest.mark.asyncio
+    async def test_call_tool_description_is_left_alone(self):
+        server = build_big_server(20)
+        await apply_tool_search(server, "bm25")
+        call_tool = next(t for t in await server.list_tools() if t.name == "call_tool")
+        assert "Call a tool by name" in (call_tool.description or "")

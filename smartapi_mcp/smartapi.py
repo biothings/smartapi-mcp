@@ -86,15 +86,36 @@ def get_base_server_url(api_spec: dict) -> str:
     elif len(api_spec["servers"]) > 1:
         for server in api_spec["servers"]:
             server_desc = server.get("description", "")
-            if "ci.transltr.io" in server["url"].lower():
-                base_server_url = server["url"]
+            # ``url`` is required by OpenAPI but read defensively: a servers
+            # entry without one used to raise KeyError here, which surfaced as
+            # an opaque "KeyError: 'url'" instead of the clear ValueError below.
+            server_url = server.get("url") or ""
+            if "ci.transltr.io" in server_url.lower():
+                base_server_url = server_url
                 break
-            if (
+            if server_url and (
                 "Production server on https" in server_desc
                 or "Production" in server_desc
             ):
+                base_server_url = server_url
+                break
+    if not base_server_url:
+        # Fall back to the machine-readable ``x-maturity`` extension. The
+        # heuristics above only inspect the free-text ``description``, but the
+        # Translator APIs record maturity in this field instead -- so specs that
+        # plainly declare a production server were being refused. Measured on
+        # the registry's uptime-passing set, this recovers 7 of 14 failures
+        # (Sri-node-normalizer, five Automat services, Metadata Domain).
+        #
+        # Checked *after* the existing rules rather than before them, so every
+        # API that already resolves keeps resolving to the same URL; this only
+        # rescues specs that would otherwise raise.
+        for server in api_spec["servers"]:
+            maturity = str(server.get("x-maturity", "")).strip().lower()
+            if maturity == "production" and server.get("url"):
                 base_server_url = server["url"]
                 break
+
     if not base_server_url:
         err_msg = "Cannot determine server URL for API: {}\n{}"
         err_msg = err_msg.format(api_name, api_spec["servers"])
@@ -119,7 +140,11 @@ CORE_BIOTHINGS_API_IDS = [
 # SemmedDB, added to the "test" set for its non-standard /query/ngd endpoint.
 _SEMMEDDB_ID = "1d288b3a3caf75d541ffaae3aab386c8"
 
-PREDEFINED_API_SETS = ["biothings_core", "biothings_test", "biothings_all"]
+PREDEFINED_API_SETS = ["biothings_core", "biothings_test", "biothings_all", "all"]
+
+# Registry query selecting every API the SmartAPI registry currently reports as
+# reachable. Used by the ``all`` preset.
+WORKING_APIS_QUERY = "_status.uptime_status:pass"
 
 
 def get_predefined_api_set(api_set: str) -> dict:
@@ -146,5 +171,14 @@ def get_predefined_api_set(api_set: str) -> dict:
                 "27a5b60716c3a401f2c021a5b718c5b1",  # SmartAPI registry API
             ],
         }
+    if api_set == "all":
+        # Every API the registry reports as up, BioThings or not. Practical
+        # because the defaults keep the listing small: the BioThings family
+        # goes through the facade (~5 tools, no spec downloads) and the
+        # remaining per-API tools are collapsed behind tool search. Measured on
+        # ~106 APIs: 7 listed tools, ~1.9k tokens of tools/list, ~19s startup.
+        # APIs whose specs cannot be loaded are skipped with a warning rather
+        # than failing the whole server.
+        return {"smartapi_q": WORKING_APIS_QUERY}
     err_msg = f"Unknown API set: {api_set}"
     raise ValueError(err_msg)

@@ -33,7 +33,7 @@ Earlier releases (through 0.3.2) wrapped the [AWS Labs OpenAPI MCP Server](https
 - 📖 **OpenAPI Validation**: Automatic OpenAPI specification parsing and validation
 - 🛠️ **CLI Interface**: Easy-to-use command-line interface with multiple configuration options
 - 🧬 **Bioinformatics Focus**: Pre-configured API sets for bioinformatics and life sciences
-- 🧩 **Scales to large API sets**: Large BioThings sets (e.g. `biothings_all`, 200+ operations) automatically collapse to ~5 generic tools, avoiding client context overflow without relying on client-side tool deferral
+- 🧩 **Scales to large API sets**: Large BioThings sets (e.g. `biothings_all`, 200+ operations) automatically collapse to ~5 generic tools, avoiding client context overflow without relying on client-side tool deferral. `--api_set all` serves the whole reachable registry (~106 APIs) in ~7 listed tools
 - 🎯 **Flexible Configuration**: Support for environment variables, arguments, and configuration files
 - 🚀 **Multiple Transport Modes**: Support for both stdio and HTTP transport protocols
 - 🧪 **Comprehensive Testing**: Full test suite with high code coverage
@@ -84,6 +84,10 @@ uvx smartapi-mcp@0.2.0 --api_set biothings_core
 
 # Run with additional arguments
 uvx smartapi-mcp --smartapi_id 59dce17363dce279d389100834e43648 --server_name "MyGene MCP Server"
+
+# Serve every API the SmartAPI registry reports as reachable (~106 APIs).
+# The default facade and tool-search settings keep this to ~7 listed tools.
+uvx smartapi-mcp --api_set all
 ```
 
 #### Using with Claude Desktop

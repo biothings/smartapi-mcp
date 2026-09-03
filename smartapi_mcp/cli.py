@@ -41,7 +41,10 @@ def main():
         help=(
             "A predefined set of SmartAPI APIs to include. One of: "
             "'biothings_core' (the 6 core BioThings APIs), 'biothings_test' "
-            "(core + SemmedDB), or 'biothings_all' (all BioThings APIs). "
+            "(core + SemmedDB), 'biothings_all' (all BioThings APIs), or "
+            "'all' (every API the registry reports as reachable, BioThings or "
+            "not -- ~106 APIs, which the default facade and tool-search "
+            "settings keep down to ~7 listed tools). "
             "[env: SMARTAPI_API_SET]"
         ),
     )

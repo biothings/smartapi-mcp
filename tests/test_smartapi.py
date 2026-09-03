@@ -10,6 +10,7 @@ from smartapi_mcp.openapi import SpecError
 from smartapi_mcp.smartapi import (
     CORE_BIOTHINGS_API_IDS,
     PREDEFINED_API_SETS,
+    WORKING_APIS_QUERY,
     get_base_server_url,
     get_predefined_api_set,
     get_smartapi_ids,
@@ -258,9 +259,113 @@ def test_get_predefined_api_set_empty_string():
 
 
 def test_predefined_api_sets_constant():
-    """Test that PREDEFINED_API_SETS constant contains expected values."""
-    expected_sets = ["biothings_core", "biothings_test", "biothings_all"]
+    """Every advertised set name must be resolvable by get_predefined_api_set."""
     assert isinstance(PREDEFINED_API_SETS, list)
-    assert len(PREDEFINED_API_SETS) == 3
-    for expected_set in expected_sets:
-        assert expected_set in PREDEFINED_API_SETS
+    assert PREDEFINED_API_SETS == [
+        "biothings_core",
+        "biothings_test",
+        "biothings_all",
+        "all",
+    ]
+    # The list is what --api_set offers, so nothing in it may raise.
+    for name in PREDEFINED_API_SETS:
+        spec = get_predefined_api_set(name)
+        assert "smartapi_ids" in spec or "smartapi_q" in spec
+
+
+def test_all_preset_selects_every_working_api():
+    """`all` is the whole registry filtered to what it reports as reachable."""
+    spec = get_predefined_api_set("all")
+    assert spec == {"smartapi_q": WORKING_APIS_QUERY}
+    assert WORKING_APIS_QUERY == "_status.uptime_status:pass"
+    # Deliberately unfiltered: unlike biothings_all it carries no exclusions,
+    # because the uptime filter is the whole selection criterion.
+    assert "smartapi_exclude_ids" not in spec
+
+
+class TestServerUrlMaturity:
+    """get_base_server_url honours the x-maturity extension.
+
+    The description-based heuristics miss it, so Translator specs that plainly
+    declare a production server were refused: 7 of the 14 per-API failures on
+    the registry's uptime-passing set were this.
+    """
+
+    def test_picks_the_production_maturity_server(self):
+        spec = {
+            "info": {"title": "Automat-robokop"},
+            "servers": [
+                {
+                    "url": "https://automat.renci.org/robokopkg",
+                    "description": "Default server",
+                    "x-maturity": "development",
+                },
+                {
+                    "url": "https://automat.test.transltr.io/robokopkg/",
+                    "description": "Default server",
+                    "x-maturity": "testing",
+                },
+                {
+                    "url": "https://automat.transltr.io/robokopkg/",
+                    "description": "Default server",
+                    "x-maturity": "production",
+                },
+            ],
+        }
+        assert get_base_server_url(spec) == "https://automat.transltr.io/robokopkg/"
+
+    def test_maturity_is_only_a_fallback(self):
+        """An API that already resolved must keep resolving to the same URL.
+
+        The x-maturity check runs after the existing rules, so adding it cannot
+        change any URL that was previously chosen.
+        """
+        spec = {
+            "info": {"title": "Test API"},
+            "servers": [
+                {
+                    "url": "https://prod.example.com",
+                    "description": "Production server on https",
+                },
+                {"url": "https://other.example.com", "x-maturity": "production"},
+            ],
+        }
+        assert get_base_server_url(spec) == "https://prod.example.com"
+
+    def test_maturity_matching_is_case_and_space_insensitive(self):
+        spec = {
+            "info": {"title": "T"},
+            "servers": [
+                {"url": "https://dev.example.com", "x-maturity": "development"},
+                {"url": "https://prod.example.com", "x-maturity": " Production "},
+            ],
+        }
+        assert get_base_server_url(spec) == "https://prod.example.com"
+
+    def test_still_raises_when_no_server_is_production(self):
+        """Aragorn declares only development and testing; that must still fail."""
+        spec = {
+            "info": {"title": "Aragorn"},
+            "servers": [
+                {
+                    "url": "https://aragorn.renci.org/aragorn",
+                    "x-maturity": "development",
+                },
+                {
+                    "url": "https://aragorn.test.transltr.io/aragorn",
+                    "x-maturity": "testing",
+                },
+            ],
+        }
+        with pytest.raises(ValueError, match="Cannot determine server URL"):
+            get_base_server_url(spec)
+
+    def test_a_maturity_entry_without_a_url_is_skipped(self):
+        spec = {
+            "info": {"title": "T"},
+            "servers": [
+                {"x-maturity": "production"},
+                {"url": "https://real.example.com", "x-maturity": "production"},
+            ],
+        }
+        assert get_base_server_url(spec) == "https://real.example.com"

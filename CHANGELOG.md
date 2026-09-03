@@ -7,15 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Removed
-- **Dropped the `loguru` dependency** in favour of the standard library's
-  `logging`. This package used only `debug`/`info`/`warning`/`error` -- none of
-  loguru's distinguishing features (no `.bind()`, `.catch()`, `.opt()`,
-  serialization or rotation) -- and nothing else in the dependency tree required
-  it, so it is one fewer package (426 KB) for no loss of capability. Log output
-  is unchanged: same format, same colours, same call-site detail.
+### Added
+
+- **`--api_set all`** (env `SMARTAPI_API_SET=all`): every API the registry
+  reports as reachable, BioThings or not, via
+  `_status.uptime_status:pass`. This was already expressible as
+  `--smartapi_q '_status.uptime_status:pass'` but undiscoverable, and it only
+  became practical with the defaults introduced in 0.4.0. Measured on the 106
+  matching APIs: **7 listed tools, ~1.9k tokens of `tools/list`, ~19s startup,
+  119 MB RSS** — the BioThings family goes through the facade without
+  downloading a single spec, and the remaining ~294 per-API tools sit behind
+  tool search. Served flat as per-API tools the same set would be ~592 tools
+  and roughly **340k tokens**, so the facade and search defaults are what make
+  it viable at all.
+  Also exported as `WORKING_APIS_QUERY` from `smartapi_mcp.smartapi`.
 
 ### Changed
+
 - **Importing this package no longer reconfigures the host application's
   logging.** This is the reason for the change above. loguru has a single global
   logger, so installing our own sink meant calling `logger.remove()` at import
@@ -54,6 +62,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and the `fastmcp.server.transforms.search` transforms.
 
 ### Fixed
+
+- **`search_tools` now says what its index covers.** fastmcp describes its
+  search tool as "Search for tools using natural language", which gives a model
+  no way to know that the pinned BioThings facade tools are deliberately *not*
+  in the index. On the full working set,
+  `search_tools("gene annotation by entrez id")` returned QuickGO and BTE
+  instead of directing the caller at `biothings_query`. The description now
+  states how many tools are searchable, names the facade tools that are not,
+  and lists the domains they own. Applied through the transform's public
+  `transform_tools` hook, because the synthetic tools are rebuilt on every
+  `list_tools` call, so mutating the returned object does not stick.
+- **`get_base_server_url()` now honours the `x-maturity` extension.** It only
+  inspected the free-text `description` for "Production" (or matched
+  `ci.transltr.io`), so Translator specs that plainly declare a production
+  server were refused. Checked *after* the existing rules, so no API that
+  already resolved changes URL. On the registry's uptime-passing set this takes
+  coverage from **92 to 97 of 106 APIs served**; the remaining 9 are legitimate
+  (4 refused external `$ref`s, 3 specs fastmcp rejects, 2 with no production
+  server at all).
+- A `servers` entry without a `url` raised `KeyError: 'url'` from
+  `get_base_server_url()` instead of the clear `ValueError` that follows.
+
 - **The CLI's signal handler logged a literal `%s` instead of the signal
   number.** `logger.debug("Received signal %s, ...", sig)` used %-style
   arguments, but loguru formats with braces, so the argument was silently
@@ -72,6 +102,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unchanged -- the JSON body is still sent nested as the API expects -- and a
   test now pins both halves of that, since it is fastmcp behaviour we depend on
   rather than something this package controls.
+
+### Removed
+
+- **Dropped the `loguru` dependency** in favour of the standard library's
+  `logging`. This package used only `debug`/`info`/`warning`/`error` -- none of
+  loguru's distinguishing features (no `.bind()`, `.catch()`, `.opt()`,
+  serialization or rotation) -- and nothing else in the dependency tree required
+  it, so it is one fewer package (426 KB) for no loss of capability. Log output
+  is unchanged: same format, same colours, same call-site detail.
 
 ## [0.5.0] - 2026-09-02
 

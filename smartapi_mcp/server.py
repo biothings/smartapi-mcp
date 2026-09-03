@@ -7,7 +7,7 @@ Main MCP server implementation for SmartAPI integration.
 import hashlib
 import logging
 import re
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 
 from fastmcp import FastMCP
 from fastmcp.server.transforms.search import (
@@ -67,6 +67,86 @@ TOOL_SEARCH_AUTO_MODE = "bm25"
 # care about, which is payload size. A byte/token budget would be the better
 # instrument and would make this constant a floor rather than the decision.
 TOOL_SEARCH_AUTO_THRESHOLD = 15
+
+# Names of the two synthetic tools the search transforms add.
+SEARCH_TOOL_NAME = "search_tools"
+CALL_TOOL_NAME = "call_tool"
+
+
+class _SearchToolDescriptionMixin:
+    """Replaces the synthetic search tool's description.
+
+    fastmcp's search transforms describe their search tool as "Search for tools
+    using natural language", which says nothing about *which* tools are in the
+    index. That matters here because the default server is a hybrid: the
+    BioThings annotation APIs are served by the pinned facade tools and are
+    **not** in the search index, so a BioThings-domain query sent to
+    ``search_tools`` returns plausible-looking hits from unrelated APIs with no
+    hint that a better tool is listed right there. Measured before this change:
+    ``search_tools("gene annotation by entrez id")`` returned QuickGO and BTE
+    rather than pointing at ``biothings_query``.
+
+    The transform rebuilds its synthetic tools on every ``list_tools`` call, so
+    mutating the returned object does not stick; this overrides the public
+    ``transform_tools`` hook instead. The search tool's *name* is tracked here
+    rather than read back off the parent, to avoid depending on a private
+    attribute.
+    """
+
+    def __init__(
+        self,
+        *args: object,
+        search_tool_description: str | None = None,
+        search_tool_name: str = "search_tools",
+        **kwargs: object,
+    ) -> None:
+        super().__init__(*args, search_tool_name=search_tool_name, **kwargs)
+        self._description_override = search_tool_description
+        self._described_tool_name = search_tool_name
+
+    async def transform_tools(self, tools):
+        transformed = await super().transform_tools(tools)
+        if not self._description_override:
+            return transformed
+        return [
+            tool.model_copy(update={"description": self._description_override})
+            if tool.name == self._described_tool_name
+            else tool
+            for tool in transformed
+        ]
+
+
+class _DescribedBM25Search(_SearchToolDescriptionMixin, BM25SearchTransform):
+    """BM25 search whose search tool carries our own description."""
+
+
+class _DescribedRegexSearch(_SearchToolDescriptionMixin, RegexSearchTransform):
+    """Regex search whose search tool carries our own description."""
+
+
+def _search_tool_description(hidden_count: int, pinned: Sequence[str]) -> str:
+    """Describe what the search index covers, and what it does not.
+
+    ``pinned`` is the set of always-visible tools -- the BioThings facade, on
+    the default path. Those are excluded from the index, so the description has
+    to send BioThings-domain queries to them instead.
+    """
+    text = (
+        f"Search this server's {hidden_count} additional tools using natural "
+        "language, and return the matching tool definitions ranked by "
+        f"relevance. Use it to find a tool, then invoke it with "
+        f"'{CALL_TOOL_NAME}'."
+    )
+    facade_tools = sorted(p for p in pinned if p.startswith("biothings"))
+    if facade_tools:
+        text += (
+            "\n\nThis index covers only the APIs that are *not* part of the "
+            "BioThings annotation family. For gene, variant, chemical, drug, "
+            "disease, phenotype, taxonomy or gene-set annotation, do not search "
+            f"-- use the already-listed {', '.join(facade_tools)} tools, "
+            "starting with 'list_biothings_apis' to choose an API."
+        )
+    return text
 
 
 async def apply_tool_search(
@@ -140,7 +220,7 @@ async def apply_tool_search(
         mode = TOOL_SEARCH_AUTO_MODE
 
     pinned = sorted(always_visible)
-    transform_cls = BM25SearchTransform if mode == "bm25" else RegexSearchTransform
+    transform_cls = _DescribedBM25Search if mode == "bm25" else _DescribedRegexSearch
     server.add_transform(
         transform_cls(
             max_results=max_results,
@@ -148,6 +228,12 @@ async def apply_tool_search(
             # Markdown results are roughly half the size of the default JSON
             # serialization, which is the point when enabling search at all.
             search_result_serializer=serialize_tools_for_output_markdown,
+            # Say what the index covers; fastmcp's stock wording does not, and
+            # the pinned facade tools are deliberately outside it.
+            search_tool_description=_search_tool_description(
+                tool_count - len(pinned), pinned
+            ),
+            search_tool_name=SEARCH_TOOL_NAME,
         )
     )
     exposed = len(await server.list_tools())
