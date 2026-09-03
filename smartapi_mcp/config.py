@@ -15,11 +15,12 @@ silently overwrite the environment on every run. ``cli.py`` sets those defaults
 to ``None`` and ``tests/test_tool_search.py`` guards it.
 """
 
+import logging
 import os
 from dataclasses import dataclass
 from typing import Any
 
-from .log import logger
+logger = logging.getLogger(__name__)
 
 
 @dataclass

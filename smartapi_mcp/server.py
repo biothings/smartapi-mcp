@@ -5,6 +5,7 @@ Main MCP server implementation for SmartAPI integration.
 """
 
 import hashlib
+import logging
 import re
 from collections.abc import Iterable
 
@@ -22,7 +23,6 @@ from .biothings import (
     is_biothings_family,
     partition_biothings,
 )
-from .log import logger
 from .openapi import build_openapi_server
 
 # Import from smartapi module - avoiding circular imports
@@ -32,6 +32,8 @@ from .smartapi import (
     get_smartapi_ids,
     load_api_spec,
 )
+
+logger = logging.getLogger(__name__)
 
 # Cap names at 64 characters. The MCP spec (SEP-986) recommends 1-64 chars for
 # *tool* names as a SHOULD, but the limit is enforced as a hard error by the

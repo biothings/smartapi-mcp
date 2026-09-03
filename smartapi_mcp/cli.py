@@ -6,6 +6,7 @@ Provides CLI commands for running and managing the SmartAPI MCP server.
 
 import argparse
 import asyncio
+import logging
 import signal
 import sys
 import traceback
@@ -13,8 +14,10 @@ import traceback
 from fastmcp import FastMCP
 
 from .config import load_config
-from .log import get_format, logger
+from .log import configure_logging
 from .server import TOOL_SEARCH_MODES, build_server_for_set
+
+logger = logging.getLogger(__name__)
 
 
 async def get_all_counts(server: FastMCP) -> tuple[int, int, int, int]:
@@ -177,9 +180,9 @@ def main():
 
     args = parser.parse_args()
 
-    # Set up logging with loguru at specified level
-    logger.remove()
-    logger.add(sys.stderr, format=get_format(), level=args.log_level)
+    # Install our stderr handler. This is the only place the package configures
+    # logging: doing it at import time would clobber a host application's setup.
+    configure_logging(args.log_level)
     logger.info(f"Starting server with logging level: {args.log_level}")
 
     # Load configuration

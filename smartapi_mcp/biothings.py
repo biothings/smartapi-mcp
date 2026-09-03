@@ -12,6 +12,7 @@ the set, so the server works on every MCP client without depending on runtime
 """
 
 import asyncio
+import logging
 import math
 import re
 from dataclasses import dataclass, field
@@ -20,7 +21,6 @@ import httpx2
 from fastmcp import FastMCP
 from fastmcp.tools import Tool
 
-from .log import logger
 from .smartapi import (
     CORE_BIOTHINGS_API_IDS,
     HTTP_TIMEOUT,
@@ -28,6 +28,8 @@ from .smartapi import (
     get_smartapi_registry,
     load_api_spec,
 )
+
+logger = logging.getLogger(__name__)
 
 # Matches a BioThings annotation path like ``/gene/{geneid}`` and captures the
 # entity (biothing) type segment.

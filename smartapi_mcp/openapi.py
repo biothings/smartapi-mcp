@@ -32,6 +32,7 @@ was never validated by awslabs either -- that is unchanged here.)
 """
 
 import json
+import logging
 import time
 from typing import Any
 
@@ -39,7 +40,8 @@ import httpx2
 from fastmcp import FastMCP
 from fastmcp.utilities.openapi import format_description_with_responses
 
-from .log import logger
+logger = logging.getLogger(__name__)
+
 
 __all__ = [
     "SpecError",

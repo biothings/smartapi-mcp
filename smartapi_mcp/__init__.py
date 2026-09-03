@@ -11,6 +11,7 @@ __email__ = "help@biothings.io"
 # Optional imports for when dependencies are available
 try:
     from .biothings import build_biothings_facade, build_registry
+    from .log import configure_logging
     from .openapi import (
         SpecError,
         build_openapi_server,
@@ -39,6 +40,7 @@ try:
         "build_openapi_server",
         "build_registry",
         "build_server_for_set",
+        "configure_logging",
         "fetch_spec",
         "get_base_server_url",
         "get_mcp_server",

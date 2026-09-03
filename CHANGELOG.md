@@ -7,7 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+- **Dropped the `loguru` dependency** in favour of the standard library's
+  `logging`. This package used only `debug`/`info`/`warning`/`error` -- none of
+  loguru's distinguishing features (no `.bind()`, `.catch()`, `.opt()`,
+  serialization or rotation) -- and nothing else in the dependency tree required
+  it, so it is one fewer package (426 KB) for no loss of capability. Log output
+  is unchanged: same format, same colours, same call-site detail.
+
 ### Changed
+- **Importing this package no longer reconfigures the host application's
+  logging.** This is the reason for the change above. loguru has a single global
+  logger, so installing our own sink meant calling `logger.remove()` at import
+  time -- which removed *the application's* handlers too. Importing
+  `smartapi_mcp` would silently redirect an embedding app's logs into our stderr
+  sink and drop whatever it had configured, verified by reproducing it.
+  Now each module holds its own `logging.getLogger(__name__)`, the only
+  import-time action is a `NullHandler` on the `smartapi_mcp` logger, and
+  records propagate to the application until it decides otherwise. New
+  `configure_logging(level, stream=None, *, color=None)` (exported from the
+  package) installs our coloured stderr handler; the CLI calls it, and nothing
+  else does.
+- **`--log-level` now also controls fastmcp, mcp and httpx2 diagnostics.** Those
+  register ~48 stdlib loggers between them, so before this change the flag
+  reached only our own half of the logging and their output could not be turned
+  up from the CLI.
+- `get_format()` now returns a `logging` format string (`%(levelname)s`,
+  `%(name)s`, ...) rather than loguru's brace-and-markup syntax. It is still
+  exported, but `configure_logging()` is the supported entry point.
+
 - **Migrated to `fastmcp` 4.x and `httpx2`.** fastmcp 4 moves to the MCP 2.x SDK
   and replaces `httpx` with [`httpx2`](https://github.com/pydantic/httpx2), a
   continuation of httpx under a new package name; `FastMCP.from_openapi()` types
@@ -26,7 +54,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and the `fastmcp.server.transforms.search` transforms.
 
 ### Fixed
-- Nothing in this release; it is a dependency migration. Verified against a
+- **The CLI's signal handler logged a literal `%s` instead of the signal
+  number.** `logger.debug("Received signal %s, ...", sig)` used %-style
+  arguments, but loguru formats with braces, so the argument was silently
+  dropped. The standard library interpolates it correctly.
+- Otherwise nothing behavioural; this is a dependency migration. Verified against a
   recording of the fastmcp 3 output over the same 107 uptime-passing registry
   APIs (`scripts/check_spec_parity.py`): the same **92 APIs build**, no tool
   names change, no descriptions change, and there are **no structural
