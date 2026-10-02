@@ -228,6 +228,8 @@ class TestToolSearchConfig:
             "--facade",
             "--facade-threshold",
             "--port",
+            "--spec_url",
+            "--log-level",
         ):
             assert captured[flag] is None, f"{flag} default shadows its env var"
 
@@ -392,6 +394,21 @@ class TestSearchToolDescription:
         await apply_tool_search(server, "bm25")
         description = (await self._search_tool(server)).description or ""
         assert "BioThings" not in description
+
+    @pytest.mark.asyncio
+    async def test_a_pinned_api_named_biothings_is_not_taken_for_the_facade(self):
+        """Only the facade's own tool names trigger the facade paragraph."""
+        server = build_big_server(20)
+        server.add_tool(
+            Tool.from_function(
+                lambda q="": q, name="biothings_semmeddb_query", description="d"
+            )
+        )
+        await apply_tool_search(
+            server, "bm25", always_visible=["biothings_semmeddb_query"]
+        )
+        description = (await self._search_tool(server)).description or ""
+        assert "BioThings annotation family" not in description
 
     @pytest.mark.asyncio
     async def test_searchable_count_excludes_pinned_tools(self):

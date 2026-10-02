@@ -111,8 +111,8 @@ def test_get_base_server_url_multiple_servers_with_ci_transltr():
     assert base_url == "https://api.ci.transltr.io/test"
 
 
-def test_get_base_server_url_no_suitable_server():
-    """Test get_base_server_url raises ValueError when no suitable server found."""
+def test_get_base_server_url_no_production_server_falls_back_to_first(caplog):
+    """With no production server identified, the first one is used, loudly."""
     api_spec = {
         "info": {"title": "Test API"},
         "servers": [
@@ -120,10 +120,10 @@ def test_get_base_server_url_no_suitable_server():
             {"url": "https://staging.api.example.com", "description": "Staging server"},
         ],
     }
-    with pytest.raises(ValueError, match="Cannot determine server URL") as exc_info:
-        get_base_server_url(api_spec)
-
-    assert "Cannot determine server URL for API: test_api" in str(exc_info.value)
+    with caplog.at_level("WARNING", logger="smartapi_mcp.smartapi"):
+        assert get_base_server_url(api_spec) == "https://dev.api.example.com"
+    assert "No production server identified for API 'Test API'" in caplog.text
+    assert "https://dev.api.example.com (of 2)" in caplog.text
 
 
 def test_get_base_server_url_server_without_description():
@@ -369,3 +369,100 @@ class TestServerUrlMaturity:
             ],
         }
         assert get_base_server_url(spec) == "https://real.example.com"
+
+
+class TestServerUrlFallback:
+    """When no production server is identified, the first usable one is taken.
+
+    Before this, such an API was skipped outright. On the registry's
+    uptime-passing set that was one API, Identifiers.org, which lists three
+    mirrors of one service and labels none of them production.
+    """
+
+    def test_identifiers_org_resolves_to_its_main_endpoint(self):
+        spec = {
+            "info": {"title": "Identifiers.org Compact ID Resolution Service"},
+            "servers": [
+                {
+                    "url": "http://resolver.api.identifiers.org",
+                    "description": "Main endpoint for this service",
+                },
+                {
+                    "url": "http://resolver.api.gcloud.identifiers.org",
+                    "description": "Google Cloud API Service endpoint",
+                },
+            ],
+        }
+        assert get_base_server_url(spec) == "http://resolver.api.identifiers.org"
+
+    def test_relative_urls_are_skipped(self):
+        spec = {
+            "info": {"title": "T"},
+            "servers": [
+                {"url": "/v1", "description": "Relative"},
+                {"url": "https://api.example.com/v1", "description": "Absolute"},
+            ],
+        }
+        assert get_base_server_url(spec) == "https://api.example.com/v1"
+
+    def test_only_relative_urls_still_raises(self):
+        spec = {"info": {"title": "T"}, "servers": [{"url": "/"}, {"url": "/v2"}]}
+        with pytest.raises(ValueError, match="Cannot determine server URL"):
+            get_base_server_url(spec)
+
+    def test_servers_labelled_non_production_are_skipped(self):
+        """An explicit non-production x-maturity is a statement, not a gap."""
+        spec = {
+            "info": {"title": "T"},
+            "servers": [
+                {"url": "https://dev.example.com", "x-maturity": "development"},
+                {"url": "https://mirror.example.com"},
+            ],
+        }
+        assert get_base_server_url(spec) == "https://mirror.example.com"
+
+    def test_rules_above_the_fallback_still_win(self):
+        spec = {
+            "info": {"title": "T"},
+            "servers": [
+                {"url": "https://first.example.com"},
+                {"url": "https://prod.example.com", "x-maturity": "production"},
+            ],
+        }
+        assert get_base_server_url(spec) == "https://prod.example.com"
+
+
+class TestProductionDescription:
+    def test_matching_is_case_insensitive(self):
+        spec = {
+            "info": {"title": "T"},
+            "servers": [
+                {"url": "https://staging.example.com", "description": "Staging"},
+                {"url": "https://api.example.com", "description": "production server"},
+            ],
+        }
+        assert get_base_server_url(spec) == "https://api.example.com"
+
+    @pytest.mark.parametrize(
+        "description", ["Non-Production test server", "non production", "nonproduction"]
+    )
+    def test_non_production_is_not_production(self, description):
+        spec = {
+            "info": {"title": "T"},
+            "servers": [
+                {"url": "https://test.example.com", "description": description},
+                {"url": "https://api.example.com", "x-maturity": "production"},
+            ],
+        }
+        assert get_base_server_url(spec) == "https://api.example.com"
+
+
+class TestMissingServers:
+    def test_missing_servers_key_raises_value_error(self):
+        """Used to escape as an opaque ``KeyError: 'servers'``."""
+        with pytest.raises(ValueError, match="declares no servers"):
+            get_base_server_url({"info": {"title": "T"}})
+
+    def test_empty_servers_list_raises_value_error(self):
+        with pytest.raises(ValueError, match="declares no servers"):
+            get_base_server_url({"info": {"title": "T"}, "servers": []})

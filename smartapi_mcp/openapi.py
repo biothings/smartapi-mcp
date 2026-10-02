@@ -25,18 +25,22 @@ Two behaviours from the awslabs loader are deliberately kept:
   complete (measured: ClinGen's descriptions go from 16,910 to 22,062 chars).
 
 The DNS-pinned fetch in the awslabs loader is *not* kept. It guards against a
-hostile, caller-supplied spec URL; the only URL this package fetches is the
-hardcoded ``smart-api.info`` metadata endpoint, so there is no attacker-chosen
-host to pin. (The API *base* URL does come from third-party spec content, but it
+hostile, caller-supplied spec URL; the URLs this package fetches are the
+hardcoded ``smart-api.info`` metadata endpoint and the ``--spec_url`` values the
+operator passes on the command line, so there is no attacker-chosen host to
+pin. (The API *base* URL does come from third-party spec content, but it
 was never validated by awslabs either -- that is unchanged here.)
 """
 
 import json
 import logging
 import time
+from pathlib import Path
 from typing import Any
+from urllib.parse import unquote, urlparse
 
 import httpx2
+import yaml
 from fastmcp import FastMCP
 from fastmcp.utilities.openapi import format_description_with_responses
 
@@ -146,26 +150,14 @@ def reject_external_refs(node: Any) -> None:
 
 
 def _parse_spec_bytes(content: bytes) -> dict[str, Any]:
-    """Parse spec bytes as JSON, falling back to YAML when PyYAML is present.
+    """Parse spec bytes as JSON, falling back to YAML.
 
-    The SmartAPI metadata endpoint always serves JSON, so the YAML path is a
-    convenience for callers passing their own content. PyYAML is not declared as
-    a dependency; if it is absent, a YAML document raises :class:`SpecError`
-    naming the missing package rather than an opaque JSON error.
+    The SmartAPI metadata endpoint always serves JSON, but specs passed with
+    ``--spec_url`` -- drafts on GitHub or on disk -- are usually YAML.
     """
     try:
         return validate_spec(json.loads(content))
-    except json.JSONDecodeError as json_err:
-        try:
-            # Imported lazily on purpose: PyYAML is not a declared dependency,
-            # and the SmartAPI metadata endpoint only ever serves JSON.
-            import yaml  # noqa: PLC0415
-        except ImportError:
-            err_msg = (
-                "Spec is not valid JSON and YAML parsing requires PyYAML "
-                "(pip install pyyaml)"
-            )
-            raise SpecError(err_msg) from json_err
+    except json.JSONDecodeError:
         try:
             parsed = yaml.safe_load(content)
         except yaml.YAMLError as yaml_err:
@@ -189,15 +181,28 @@ def clear_spec_cache() -> None:
 def fetch_spec(url: str, *, use_cache: bool = True) -> dict[str, Any]:
     """Fetch, parse and validate the OpenAPI spec at ``url``.
 
-    Retries transient network failures up to :data:`SPEC_FETCH_ATTEMPTS` times
-    with exponential backoff. Results are cached for :data:`SPEC_CACHE_TTL`
-    seconds. Raises :class:`SpecError` for a spec that is too large, unparseable,
-    not OpenAPI 3, or carrying an external ``$ref``; those are properties of the
-    spec and will not be fixed by retrying.
+    ``url`` may also be a local file, as a ``file://`` URL or a plain path; files
+    are read on every call rather than cached, so edits to a draft are picked
+    up. Remote fetches retry transient network failures up to
+    :data:`SPEC_FETCH_ATTEMPTS` times with exponential backoff, and results are
+    cached for :data:`SPEC_CACHE_TTL` seconds. Raises :class:`SpecError` for a
+    spec that is missing, too large, unparseable, not OpenAPI 3, or carrying an
+    external ``$ref``; those are properties of the spec and will not be fixed by
+    retrying.
     """
     if not url:
         err_msg = "A spec URL is required"
         raise SpecError(err_msg)
+
+    path = _local_spec_path(url)
+    if path is not None:
+        logger.info(f"Loading OpenAPI spec from file: {path}")
+        try:
+            content = path.read_bytes()
+        except OSError as exc:
+            err_msg = f"Cannot read spec file {path}: {exc.strerror or exc}"
+            raise SpecError(err_msg) from exc
+        return _spec_from_bytes(content)
 
     if use_cache:
         cached = _spec_cache.get(url)
@@ -239,15 +244,35 @@ def fetch_spec(url: str, *, use_cache: bool = True) -> dict[str, Any]:
         logger.error(f"All {SPEC_FETCH_ATTEMPTS} attempts to fetch {url} failed")
         raise last_error or SpecError(f"Could not fetch spec from {url}")
 
+    spec = _spec_from_bytes(content)
+    if use_cache:
+        _spec_cache[url] = (time.monotonic(), spec)
+    return spec
+
+
+def _local_spec_path(url: str) -> Path | None:
+    """Return the file ``url`` names, or ``None`` if it is a remote URL.
+
+    ``file://`` URLs and strings without a scheme are files. A Windows drive
+    letter (``C:\\specs\\x.yaml``) parses as a one-letter scheme, so that counts
+    as a path too.
+    """
+    parsed = urlparse(url)
+    if parsed.scheme == "file":
+        return Path(unquote(parsed.path))
+    if not parsed.scheme or len(parsed.scheme) == 1:
+        return Path(url).expanduser()
+    return None
+
+
+def _spec_from_bytes(content: bytes) -> dict[str, Any]:
+    """Size-check, parse, validate and ``$ref``-check raw spec content."""
     if len(content) > MAX_SPEC_BYTES:
         err_msg = f"Spec too large: {len(content)} bytes (max {MAX_SPEC_BYTES})"
         raise SpecError(err_msg)
 
     spec = _parse_spec_bytes(content)
     reject_external_refs(spec)
-
-    if use_cache:
-        _spec_cache[url] = (time.monotonic(), spec)
     return spec
 
 

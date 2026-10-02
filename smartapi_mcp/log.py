@@ -15,23 +15,35 @@ and drop whatever it had configured. Since this package used only
 ``debug``/``info``/``warning``/``error`` and none of loguru's distinguishing
 features, the standard library covers the whole requirement, and it also unifies
 us with fastmcp, mcp and httpx2, which register ~48 stdlib loggers of their own
--- so ``--log-level`` now reaches their diagnostics as well as ours.
+-- so ``--log-level`` can reach their diagnostics as well as ours (see
+:func:`configure_third_party_logging`).
 
 Applications embedding this package should just configure logging themselves
 (``logging.basicConfig(...)``); records will propagate normally. The CLI calls
-:func:`configure_logging` to install the coloured stderr handler.
+:func:`configure_logging` and :func:`configure_third_party_logging` to install
+the coloured stderr handler.
 """
 
 import logging
 import sys
 from typing import TextIO
 
-__all__ = ["LOGGER_NAME", "configure_logging", "get_format"]
+__all__ = [
+    "LOGGER_NAME",
+    "THIRD_PARTY_LOGGERS",
+    "configure_logging",
+    "configure_third_party_logging",
+    "get_format",
+]
 
 # Root of this package's logger namespace. Per-module loggers
 # (``smartapi_mcp.server``, ``smartapi_mcp.openapi``, ...) are children of it,
 # so one handler and one level here govern all of them.
 LOGGER_NAME = "smartapi_mcp"
+
+# Top-level loggers of the libraries whose diagnostics ``--log-level`` also
+# governs. fastmcp installs its own handlers; mcp and httpx2 install none.
+THIRD_PARTY_LOGGERS = ("fastmcp", "mcp", "httpx2")
 
 # Matches the format used through 0.5.0, so log output is unchanged.
 LOG_FORMAT = (
@@ -107,6 +119,49 @@ def configure_logging(
     ``color`` defaults to whether ``stream`` is a terminal.
     """
     logger = logging.getLogger(LOGGER_NAME)
+    _install_handler(logger, level, stream, color=color)
+    return logger
+
+
+def configure_third_party_logging(
+    level: str = "INFO",
+    stream: TextIO | None = None,
+    *,
+    color: bool | None = None,
+) -> None:
+    """Apply ``level`` to the fastmcp, mcp and httpx2 loggers.
+
+    At the default ``INFO`` their own defaults are left alone: mcp and httpx2
+    log every request at INFO, which would bury our startup output. Any other
+    level is applied as asked -- ``DEBUG`` to see their diagnostics, ``WARNING``
+    and above to quieten them.
+
+    fastmcp ships its own handlers, so only its level is changed. mcp and httpx2
+    have none (their records would reach only logging's WARNING-level fallback),
+    so they get our handler too, which ``configure_logging`` would not reach.
+    """
+    level = level.upper()
+    if level == "INFO":
+        return
+    for name in THIRD_PARTY_LOGGERS:
+        logger = logging.getLogger(name)
+        own_handlers = [
+            h for h in logger.handlers if not getattr(h, "_smartapi_mcp", False)
+        ]
+        if own_handlers:
+            logger.setLevel(level)
+        else:
+            _install_handler(logger, level, stream, color=color)
+
+
+def _install_handler(
+    logger: logging.Logger,
+    level: str,
+    stream: TextIO | None,
+    *,
+    color: bool | None,
+) -> None:
+    """Replace our marked handler on ``logger`` with a fresh one at ``level``."""
     stream = stream if stream is not None else sys.stderr
     if color is None:
         color = bool(getattr(stream, "isatty", lambda: False)())
@@ -123,7 +178,6 @@ def configure_logging(
     # Our handler already writes to stderr; propagating would duplicate the
     # record onto the root logger's handlers if the application configured one.
     logger.propagate = False
-    return logger
 
 
 # The one thing that *is* safe to do at import time: a NullHandler on the

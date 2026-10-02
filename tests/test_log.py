@@ -20,8 +20,10 @@ import pytest
 from smartapi_mcp.log import (
     DATE_FORMAT,
     LOGGER_NAME,
+    THIRD_PARTY_LOGGERS,
     ColorFormatter,
     configure_logging,
+    configure_third_party_logging,
     get_format,
 )
 
@@ -41,6 +43,18 @@ def package_logger():
     logger.handlers[:] = saved[0]
     logger.setLevel(saved[1])
     logger.propagate = saved[2]
+
+
+@pytest.fixture
+def third_party_loggers():
+    """Restore the fastmcp/mcp/httpx2 loggers' state around each test."""
+    loggers = [logging.getLogger(name) for name in THIRD_PARTY_LOGGERS]
+    saved = [(list(lg.handlers), lg.level, lg.propagate) for lg in loggers]
+    yield {lg.name: lg for lg in loggers}
+    for lg, (handlers, level, propagate) in zip(loggers, saved, strict=True):
+        lg.handlers[:] = handlers
+        lg.setLevel(level)
+        lg.propagate = propagate
 
 
 def _in_fresh_interpreter(body: str) -> str:
@@ -198,6 +212,53 @@ class TestConfigureLogging:
         assert "\033[32m" in out  # green timestamp
         assert "\033[33m" in out  # yellow WARNING
         assert out.endswith("\033[0m\n")
+
+
+class TestConfigureThirdPartyLogging:
+    """``--log-level`` also governs fastmcp, mcp and httpx2."""
+
+    def test_debug_reaches_libraries_without_handlers(self, third_party_loggers):
+        stream = io.StringIO()
+        configure_third_party_logging("DEBUG", stream=stream, color=False)
+        logging.getLogger("httpx2.client").debug("httpx2 detail")
+        logging.getLogger("mcp.server").debug("mcp detail")
+        out = stream.getvalue()
+        assert "httpx2 detail" in out
+        assert "mcp detail" in out
+
+    def test_debug_keeps_fastmcps_own_handlers(self, third_party_loggers):
+        fastmcp_logger = third_party_loggers["fastmcp"]
+        sentinel = logging.NullHandler()
+        fastmcp_logger.handlers[:] = [sentinel]
+        configure_third_party_logging("DEBUG", stream=io.StringIO())
+        assert fastmcp_logger.handlers == [sentinel]
+        assert fastmcp_logger.level == logging.DEBUG
+
+    def test_info_leaves_library_defaults_alone(self, third_party_loggers):
+        before = {
+            name: (list(lg.handlers), lg.level)
+            for name, lg in third_party_loggers.items()
+        }
+        configure_third_party_logging("INFO", stream=io.StringIO())
+        after = {
+            name: (list(lg.handlers), lg.level)
+            for name, lg in third_party_loggers.items()
+        }
+        assert after == before
+
+    def test_error_quietens_library_warnings(self, third_party_loggers):
+        stream = io.StringIO()
+        configure_third_party_logging("ERROR", stream=stream)
+        logging.getLogger("httpx2").warning("suppressed")
+        assert "suppressed" not in stream.getvalue()
+        assert third_party_loggers["fastmcp"].level == logging.ERROR
+
+    def test_is_idempotent(self, third_party_loggers):
+        stream = io.StringIO()
+        configure_third_party_logging("DEBUG", stream=stream)
+        configure_third_party_logging("DEBUG", stream=stream)
+        logging.getLogger("mcp").debug("once")
+        assert stream.getvalue().count("once") == 1
 
 
 class TestFormatter:

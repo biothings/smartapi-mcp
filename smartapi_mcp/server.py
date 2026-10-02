@@ -18,12 +18,13 @@ from fastmcp.server.transforms.search import (
 
 # Import BioThings generic-facade builder
 from .biothings import (
+    FACADE_TOOL_NAMES,
     build_biothings_facade,
     build_registry,
     is_biothings_family,
     partition_biothings,
 )
-from .openapi import build_openapi_server
+from .openapi import build_openapi_server, fetch_spec
 
 # Import from smartapi module - avoiding circular imports
 from .smartapi import (
@@ -127,9 +128,12 @@ class _DescribedRegexSearch(_SearchToolDescriptionMixin, RegexSearchTransform):
 def _search_tool_description(hidden_count: int, pinned: Sequence[str]) -> str:
     """Describe what the search index covers, and what it does not.
 
-    ``pinned`` is the set of always-visible tools -- the BioThings facade, on
-    the default path. Those are excluded from the index, so the description has
-    to send BioThings-domain queries to them instead.
+    ``pinned`` is the set of always-visible tools -- the BioThings facade on
+    the default path, plus any ``--spec_url`` tools. Those are excluded from the
+    index, so the description has to send BioThings-domain queries to the
+    facade instead. Facade tools are matched by exact name, so a pinned
+    ``--spec_url`` API whose title happens to start with "BioThings" is not
+    mistaken for the facade.
     """
     text = (
         f"Search this server's {hidden_count} additional tools using natural "
@@ -137,7 +141,9 @@ def _search_tool_description(hidden_count: int, pinned: Sequence[str]) -> str:
         f"relevance. Use it to find a tool, then invoke it with "
         f"'{CALL_TOOL_NAME}'."
     )
-    facade_tools = sorted(p for p in pinned if p.startswith("biothings"))
+    facade_tools = sorted(
+        p for p in pinned if p in FACADE_TOOL_NAMES and p.startswith("biothings")
+    )
     if facade_tools:
         text += (
             "\n\nThis index covers only the APIs that are *not* part of the "
@@ -252,7 +258,20 @@ async def get_mcp_server(smartapi_id: str) -> FastMCP:
     The server is named after the spec's ``info.title``, which
     :func:`_merge_servers_into` turns into the per-API tool-name prefix.
     """
-    openapi_spec = load_api_spec(smartapi_id)
+    return _server_from_spec(load_api_spec(smartapi_id))
+
+
+async def get_mcp_server_from_url(spec_url: str) -> FastMCP:
+    """Build a faithful per-API MCP server from a spec URL or local file.
+
+    The same as :func:`get_mcp_server`, for a spec that is not (or not yet) in
+    the SmartAPI registry.
+    """
+    return _server_from_spec(fetch_spec(spec_url))
+
+
+def _server_from_spec(openapi_spec: dict) -> FastMCP:
+    """Build a per-API server named after ``openapi_spec``'s ``info.title``."""
     base_server_url = get_base_server_url(openapi_spec)
     api_name = (openapi_spec.get("info") or {}).get("title") or "OpenAPI MCP Server"
 
@@ -333,6 +352,34 @@ async def build_api_servers(
             f"and were skipped; {len(servers)} loaded successfully."
         )
     return servers, failures
+
+
+async def build_spec_url_servers(spec_urls: list[str]) -> list[FastMCP]:
+    """Build one MCP server per ``--spec_url``, failing on the first bad one.
+
+    Unlike :func:`build_api_servers`, a spec that cannot be served is an error
+    rather than a skipped API: these specs are named one by one, usually to test
+    them, so starting without one would hide exactly what is being tested.
+    Raises :class:`ValueError` naming the URL and the reason.
+    """
+    servers: list[FastMCP] = []
+    for url in spec_urls:
+        try:
+            server = await get_mcp_server_from_url(url)
+        except Exception as exc:
+            err_msg = (
+                f"Cannot serve the spec at {url}: {type(exc).__name__}: "
+                f"{str(exc)[:500]}"
+            )
+            raise ValueError(err_msg) from exc
+        if not await server.list_tools():
+            err_msg = (
+                f"The spec at {url} produced no tools: it parsed, but declares "
+                "no callable operations."
+            )
+            raise ValueError(err_msg)
+        servers.append(server)
+    return servers
 
 
 async def _merge_servers_into(
@@ -494,6 +541,7 @@ async def build_server_for_set(
     tool_search: str = "auto",
     tool_search_max_results: int = 10,
     tool_search_threshold: int = TOOL_SEARCH_AUTO_THRESHOLD,
+    spec_urls: list[str] | None = None,
 ) -> FastMCP:
     """Build the MCP server for an API set, picking the right strategy.
 
@@ -522,7 +570,41 @@ async def build_server_for_set(
     discovered by search. ``"auto"`` engages only once the merged server has
     ``tool_search_threshold`` tools; ``tool_search_max_results`` caps hits per
     search.
+
+    ``spec_urls`` adds APIs from spec URLs or local files that need not be in
+    the registry, served as faithful per-API tools (never through the facade)
+    alongside whatever the registry selection produced, and pinned so tool
+    search never hides them. They may also be the only APIs served. A spec that
+    cannot be served raises :class:`ValueError`.
     """
+    # Built first so a broken spec fails before the slower registry work.
+    spec_servers = await build_spec_url_servers(spec_urls) if spec_urls else []
+
+    async def _finish(server: FastMCP, pinned: Iterable[str] = ()) -> FastMCP:
+        pinned = list(pinned)
+        if spec_servers:
+            logger.info(f"Adding {len(spec_servers)} API(s) from spec URLs.")
+            before = {tool.name for tool in await server.list_tools()}
+            await _merge_servers_into(server, spec_servers)
+            # Keep the spec-URL tools listed even when tool search collapses
+            # the rest: they were named one by one, usually to be tested, and
+            # hiding them behind search_tools defeats that.
+            pinned += [
+                tool.name
+                for tool in await server.list_tools()
+                if tool.name not in before
+            ]
+        return await apply_tool_search(
+            server,
+            tool_search,
+            max_results=tool_search_max_results,
+            always_visible=pinned,
+            threshold=tool_search_threshold,
+        )
+
+    if spec_servers and not (smartapi_q or smartapi_id or smartapi_ids or api_set):
+        return await _finish(FastMCP(server_name))
+
     available_ids = await _resolve_smartapi_ids(
         smartapi_q=smartapi_q,
         smartapi_id=smartapi_id,
@@ -588,13 +670,7 @@ async def build_server_for_set(
                         f"Using BioThings facade for {len(facade_entries)} APIs "
                         f"(server_name={server_name})."
                     )
-                return await apply_tool_search(
-                    server,
-                    tool_search,
-                    max_results=tool_search_max_results,
-                    always_visible=facade_tool_names,
-                    threshold=tool_search_threshold,
-                )
+                return await _finish(server, facade_tool_names)
             logger.info(
                 "No APIs qualified for the BioThings facade; using per-API tools."
             )
@@ -604,9 +680,4 @@ async def build_server_for_set(
         smartapi_ids=available_ids,
         server_name=server_name,
     )
-    return await apply_tool_search(
-        server,
-        tool_search,
-        max_results=tool_search_max_results,
-        threshold=tool_search_threshold,
-    )
+    return await _finish(server)

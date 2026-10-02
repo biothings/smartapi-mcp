@@ -4,11 +4,14 @@ SmartAPI Registry Integration
 Handles interaction with the SmartAPI registry.
 """
 
+import logging
 import re
 
 import httpx2
 
 from .openapi import fetch_spec
+
+logger = logging.getLogger(__name__)
 
 smartapi_query_url = "https://smart-api.info/api/query"
 smartapi_spec_url = "https://smart-api.info/api/metadata/{smartapi_id}"
@@ -77,15 +80,47 @@ def load_api_spec(smartapi_id: str) -> dict:
     return fetch_spec(smartapi_spec_url.format(smartapi_id=smartapi_id))
 
 
+# "Production" as a word in a server description, case-insensitively, but not
+# "non-production" / "Non-Production" / "non production".
+_PRODUCTION_DESC_RE = re.compile(r"(?<![\w-])(?<!non )production\b", re.IGNORECASE)
+
+# ``x-maturity`` values that positively declare a server is not production.
+# Servers labelled this way are not used by the first-server fallback.
+_NON_PRODUCTION_MATURITIES = {"development", "testing", "staging"}
+
+
+def _maturity(server: dict) -> str:
+    return str(server.get("x-maturity", "")).strip().lower()
+
+
 def get_base_server_url(api_spec: dict) -> str:
-    """Return the base server URL for the given API specification."""
-    api_name = re.sub(r"[^a-z0-9_-]", "_", api_spec["info"]["title"].lower())
+    """Return the base server URL for the given API specification.
+
+    With one server, that server is used. With several, the first match wins
+    among, in order: a ``ci.transltr.io`` URL or a description naming it the
+    production server; an ``x-maturity: production`` server; and finally the
+    first listed absolute ``http(s)`` server not labelled as a non-production
+    maturity, with a warning, since that is the default OpenAPI tooling uses.
+    Raises :class:`ValueError` when there is nothing usable to pick.
+    """
+    title = (api_spec.get("info") or {}).get("title") or ""
+    api_name = re.sub(r"[^a-z0-9_-]", "_", title.lower())
+    servers = api_spec.get("servers")
+    if not isinstance(servers, list) or not servers:
+        # A missing ``servers`` key used to escape as an opaque KeyError.
+        err_msg = (
+            f"Cannot determine server URL for API: {api_name}\n"
+            "The spec declares no servers."
+        )
+        raise ValueError(err_msg)
+    servers = [server for server in servers if isinstance(server, dict)]
+
     base_server_url = None
-    if len(api_spec["servers"]) == 1:
-        base_server_url = api_spec["servers"][0]["url"]
-    elif len(api_spec["servers"]) > 1:
-        for server in api_spec["servers"]:
-            server_desc = server.get("description", "")
+    if len(servers) == 1:
+        base_server_url = servers[0].get("url")
+    elif len(servers) > 1:
+        for server in servers:
+            server_desc = server.get("description") or ""
             # ``url`` is required by OpenAPI but read defensively: a servers
             # entry without one used to raise KeyError here, which surfaced as
             # an opaque "KeyError: 'url'" instead of the clear ValueError below.
@@ -93,10 +128,7 @@ def get_base_server_url(api_spec: dict) -> str:
             if "ci.transltr.io" in server_url.lower():
                 base_server_url = server_url
                 break
-            if server_url and (
-                "Production server on https" in server_desc
-                or "Production" in server_desc
-            ):
+            if server_url and _PRODUCTION_DESC_RE.search(server_desc):
                 base_server_url = server_url
                 break
     if not base_server_url:
@@ -110,11 +142,32 @@ def get_base_server_url(api_spec: dict) -> str:
         # Checked *after* the existing rules rather than before them, so every
         # API that already resolves keeps resolving to the same URL; this only
         # rescues specs that would otherwise raise.
-        for server in api_spec["servers"]:
-            maturity = str(server.get("x-maturity", "")).strip().lower()
-            if maturity == "production" and server.get("url"):
+        for server in servers:
+            if _maturity(server) == "production" and server.get("url"):
                 base_server_url = server["url"]
                 break
+    if not base_server_url:
+        # Last resort: the first listed server, which is the default OpenAPI
+        # tooling (Swagger UI, generated clients) uses. Skipping the API instead
+        # threw away specs like Identifiers.org's, which lists three mirrors of
+        # one service and calls none of them "production". Relative URLs are
+        # skipped -- OpenAPI resolves them against the spec's own location,
+        # which for registry specs is smart-api.info -- and so are servers whose
+        # ``x-maturity`` positively says they are not production: a spec that
+        # declares only development and testing deployments (Aragorn) is
+        # stating that no production instance exists.
+        candidates = [
+            server
+            for server in servers
+            if re.match(r"https?://", server.get("url") or "", re.IGNORECASE)
+            and _maturity(server) not in _NON_PRODUCTION_MATURITIES
+        ]
+        if candidates:
+            base_server_url = candidates[0]["url"]
+            logger.warning(
+                f"No production server identified for API '{title}'; using the "
+                f"first listed server {base_server_url} (of {len(servers)})."
+            )
 
     if not base_server_url:
         err_msg = "Cannot determine server URL for API: {}\n{}"

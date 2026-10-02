@@ -31,6 +31,17 @@ from .smartapi import (
 
 logger = logging.getLogger(__name__)
 
+# The generic tools build_biothings_facade registers, whatever the API set.
+FACADE_TOOL_NAMES = frozenset(
+    {
+        "list_biothings_apis",
+        "biothings_query",
+        "biothings_get",
+        "biothings_getbatch",
+        "biothings_fields",
+    }
+)
+
 # Matches a BioThings annotation path like ``/gene/{geneid}`` and captures the
 # entity (biothing) type segment.
 _BIOTHING_PATH_RE = re.compile(r"^/(?P<type>[^/{}]+)/\{[^/]+\}$")
