@@ -36,7 +36,7 @@ class _FakeResponse:
 
 
 class _FakeClient:
-    """Async-context-manager stand-in for httpx.AsyncClient that records calls."""
+    """Async-context-manager stand-in for httpx2.AsyncClient that records calls."""
 
     def __init__(self, recorder, payload):
         self._recorder = recorder
@@ -253,7 +253,7 @@ def facade_with_recorder():
 
     with (
         patch("smartapi_mcp.biothings.load_api_spec", return_value=_MYGENE_SPEC),
-        patch("smartapi_mcp.biothings.httpx.AsyncClient", side_effect=_fake_client),
+        patch("smartapi_mcp.biothings.httpx2.AsyncClient", side_effect=_fake_client),
     ):
         server_obj = build_biothings_facade(_sample_registry(), "test")
         yield server_obj, recorder

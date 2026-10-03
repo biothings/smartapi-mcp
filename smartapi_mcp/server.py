@@ -5,8 +5,9 @@ Main MCP server implementation for SmartAPI integration.
 """
 
 import hashlib
+import logging
 import re
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 
 from fastmcp import FastMCP
 from fastmcp.server.transforms.search import (
@@ -17,13 +18,13 @@ from fastmcp.server.transforms.search import (
 
 # Import BioThings generic-facade builder
 from .biothings import (
+    FACADE_TOOL_NAMES,
     build_biothings_facade,
     build_registry,
     is_biothings_family,
     partition_biothings,
 )
-from .log import logger
-from .openapi import build_openapi_server
+from .openapi import build_openapi_server, fetch_spec
 
 # Import from smartapi module - avoiding circular imports
 from .smartapi import (
@@ -32,6 +33,8 @@ from .smartapi import (
     get_smartapi_ids,
     load_api_spec,
 )
+
+logger = logging.getLogger(__name__)
 
 # Cap names at 64 characters. The MCP spec (SEP-986) recommends 1-64 chars for
 # *tool* names as a SHOULD, but the limit is enforced as a hard error by the
@@ -65,6 +68,91 @@ TOOL_SEARCH_AUTO_MODE = "bm25"
 # care about, which is payload size. A byte/token budget would be the better
 # instrument and would make this constant a floor rather than the decision.
 TOOL_SEARCH_AUTO_THRESHOLD = 15
+
+# Names of the two synthetic tools the search transforms add.
+SEARCH_TOOL_NAME = "search_tools"
+CALL_TOOL_NAME = "call_tool"
+
+
+class _SearchToolDescriptionMixin:
+    """Replaces the synthetic search tool's description.
+
+    fastmcp's search transforms describe their search tool as "Search for tools
+    using natural language", which says nothing about *which* tools are in the
+    index. That matters here because the default server is a hybrid: the
+    BioThings annotation APIs are served by the pinned facade tools and are
+    **not** in the search index, so a BioThings-domain query sent to
+    ``search_tools`` returns plausible-looking hits from unrelated APIs with no
+    hint that a better tool is listed right there. Measured before this change:
+    ``search_tools("gene annotation by entrez id")`` returned QuickGO and BTE
+    rather than pointing at ``biothings_query``.
+
+    The transform rebuilds its synthetic tools on every ``list_tools`` call, so
+    mutating the returned object does not stick; this overrides the public
+    ``transform_tools`` hook instead. The search tool's *name* is tracked here
+    rather than read back off the parent, to avoid depending on a private
+    attribute.
+    """
+
+    def __init__(
+        self,
+        *args: object,
+        search_tool_description: str | None = None,
+        search_tool_name: str = "search_tools",
+        **kwargs: object,
+    ) -> None:
+        super().__init__(*args, search_tool_name=search_tool_name, **kwargs)
+        self._description_override = search_tool_description
+        self._described_tool_name = search_tool_name
+
+    async def transform_tools(self, tools):
+        transformed = await super().transform_tools(tools)
+        if not self._description_override:
+            return transformed
+        return [
+            tool.model_copy(update={"description": self._description_override})
+            if tool.name == self._described_tool_name
+            else tool
+            for tool in transformed
+        ]
+
+
+class _DescribedBM25Search(_SearchToolDescriptionMixin, BM25SearchTransform):
+    """BM25 search whose search tool carries our own description."""
+
+
+class _DescribedRegexSearch(_SearchToolDescriptionMixin, RegexSearchTransform):
+    """Regex search whose search tool carries our own description."""
+
+
+def _search_tool_description(hidden_count: int, pinned: Sequence[str]) -> str:
+    """Describe what the search index covers, and what it does not.
+
+    ``pinned`` is the set of always-visible tools -- the BioThings facade on
+    the default path, plus any ``--spec_url`` tools. Those are excluded from the
+    index, so the description has to send BioThings-domain queries to the
+    facade instead. Facade tools are matched by exact name, so a pinned
+    ``--spec_url`` API whose title happens to start with "BioThings" is not
+    mistaken for the facade.
+    """
+    text = (
+        f"Search this server's {hidden_count} additional tools using natural "
+        "language, and return the matching tool definitions ranked by "
+        f"relevance. Use it to find a tool, then invoke it with "
+        f"'{CALL_TOOL_NAME}'."
+    )
+    facade_tools = sorted(
+        p for p in pinned if p in FACADE_TOOL_NAMES and p.startswith("biothings")
+    )
+    if facade_tools:
+        text += (
+            "\n\nThis index covers only the APIs that are *not* part of the "
+            "BioThings annotation family. For gene, variant, chemical, drug, "
+            "disease, phenotype, taxonomy or gene-set annotation, do not search "
+            f"-- use the already-listed {', '.join(facade_tools)} tools, "
+            "starting with 'list_biothings_apis' to choose an API."
+        )
+    return text
 
 
 async def apply_tool_search(
@@ -138,7 +226,7 @@ async def apply_tool_search(
         mode = TOOL_SEARCH_AUTO_MODE
 
     pinned = sorted(always_visible)
-    transform_cls = BM25SearchTransform if mode == "bm25" else RegexSearchTransform
+    transform_cls = _DescribedBM25Search if mode == "bm25" else _DescribedRegexSearch
     server.add_transform(
         transform_cls(
             max_results=max_results,
@@ -146,6 +234,12 @@ async def apply_tool_search(
             # Markdown results are roughly half the size of the default JSON
             # serialization, which is the point when enabling search at all.
             search_result_serializer=serialize_tools_for_output_markdown,
+            # Say what the index covers; fastmcp's stock wording does not, and
+            # the pinned facade tools are deliberately outside it.
+            search_tool_description=_search_tool_description(
+                tool_count - len(pinned), pinned
+            ),
+            search_tool_name=SEARCH_TOOL_NAME,
         )
     )
     exposed = len(await server.list_tools())
@@ -164,7 +258,20 @@ async def get_mcp_server(smartapi_id: str) -> FastMCP:
     The server is named after the spec's ``info.title``, which
     :func:`_merge_servers_into` turns into the per-API tool-name prefix.
     """
-    openapi_spec = load_api_spec(smartapi_id)
+    return _server_from_spec(load_api_spec(smartapi_id))
+
+
+async def get_mcp_server_from_url(spec_url: str) -> FastMCP:
+    """Build a faithful per-API MCP server from a spec URL or local file.
+
+    The same as :func:`get_mcp_server`, for a spec that is not (or not yet) in
+    the SmartAPI registry.
+    """
+    return _server_from_spec(fetch_spec(spec_url))
+
+
+def _server_from_spec(openapi_spec: dict) -> FastMCP:
+    """Build a per-API server named after ``openapi_spec``'s ``info.title``."""
     base_server_url = get_base_server_url(openapi_spec)
     api_name = (openapi_spec.get("info") or {}).get("title") or "OpenAPI MCP Server"
 
@@ -245,6 +352,34 @@ async def build_api_servers(
             f"and were skipped; {len(servers)} loaded successfully."
         )
     return servers, failures
+
+
+async def build_spec_url_servers(spec_urls: list[str]) -> list[FastMCP]:
+    """Build one MCP server per ``--spec_url``, failing on the first bad one.
+
+    Unlike :func:`build_api_servers`, a spec that cannot be served is an error
+    rather than a skipped API: these specs are named one by one, usually to test
+    them, so starting without one would hide exactly what is being tested.
+    Raises :class:`ValueError` naming the URL and the reason.
+    """
+    servers: list[FastMCP] = []
+    for url in spec_urls:
+        try:
+            server = await get_mcp_server_from_url(url)
+        except Exception as exc:
+            err_msg = (
+                f"Cannot serve the spec at {url}: {type(exc).__name__}: "
+                f"{str(exc)[:500]}"
+            )
+            raise ValueError(err_msg) from exc
+        if not await server.list_tools():
+            err_msg = (
+                f"The spec at {url} produced no tools: it parsed, but declares "
+                "no callable operations."
+            )
+            raise ValueError(err_msg)
+        servers.append(server)
+    return servers
 
 
 async def _merge_servers_into(
@@ -406,6 +541,7 @@ async def build_server_for_set(
     tool_search: str = "auto",
     tool_search_max_results: int = 10,
     tool_search_threshold: int = TOOL_SEARCH_AUTO_THRESHOLD,
+    spec_urls: list[str] | None = None,
 ) -> FastMCP:
     """Build the MCP server for an API set, picking the right strategy.
 
@@ -434,7 +570,41 @@ async def build_server_for_set(
     discovered by search. ``"auto"`` engages only once the merged server has
     ``tool_search_threshold`` tools; ``tool_search_max_results`` caps hits per
     search.
+
+    ``spec_urls`` adds APIs from spec URLs or local files that need not be in
+    the registry, served as faithful per-API tools (never through the facade)
+    alongside whatever the registry selection produced, and pinned so tool
+    search never hides them. They may also be the only APIs served. A spec that
+    cannot be served raises :class:`ValueError`.
     """
+    # Built first so a broken spec fails before the slower registry work.
+    spec_servers = await build_spec_url_servers(spec_urls) if spec_urls else []
+
+    async def _finish(server: FastMCP, pinned: Iterable[str] = ()) -> FastMCP:
+        pinned = list(pinned)
+        if spec_servers:
+            logger.info(f"Adding {len(spec_servers)} API(s) from spec URLs.")
+            before = {tool.name for tool in await server.list_tools()}
+            await _merge_servers_into(server, spec_servers)
+            # Keep the spec-URL tools listed even when tool search collapses
+            # the rest: they were named one by one, usually to be tested, and
+            # hiding them behind search_tools defeats that.
+            pinned += [
+                tool.name
+                for tool in await server.list_tools()
+                if tool.name not in before
+            ]
+        return await apply_tool_search(
+            server,
+            tool_search,
+            max_results=tool_search_max_results,
+            always_visible=pinned,
+            threshold=tool_search_threshold,
+        )
+
+    if spec_servers and not (smartapi_q or smartapi_id or smartapi_ids or api_set):
+        return await _finish(FastMCP(server_name))
+
     available_ids = await _resolve_smartapi_ids(
         smartapi_q=smartapi_q,
         smartapi_id=smartapi_id,
@@ -500,13 +670,7 @@ async def build_server_for_set(
                         f"Using BioThings facade for {len(facade_entries)} APIs "
                         f"(server_name={server_name})."
                     )
-                return await apply_tool_search(
-                    server,
-                    tool_search,
-                    max_results=tool_search_max_results,
-                    always_visible=facade_tool_names,
-                    threshold=tool_search_threshold,
-                )
+                return await _finish(server, facade_tool_names)
             logger.info(
                 "No APIs qualified for the BioThings facade; using per-API tools."
             )
@@ -516,9 +680,4 @@ async def build_server_for_set(
         smartapi_ids=available_ids,
         server_name=server_name,
     )
-    return await apply_tool_search(
-        server,
-        tool_search,
-        max_results=tool_search_max_results,
-        threshold=tool_search_threshold,
-    )
+    return await _finish(server)

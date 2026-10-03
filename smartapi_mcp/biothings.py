@@ -12,21 +12,34 @@ the set, so the server works on every MCP client without depending on runtime
 """
 
 import asyncio
+import logging
 import math
 import re
 from dataclasses import dataclass, field
 
-import httpx
+import httpx2
 from fastmcp import FastMCP
 from fastmcp.tools import Tool
 
-from .log import logger
 from .smartapi import (
     CORE_BIOTHINGS_API_IDS,
     HTTP_TIMEOUT,
     get_base_server_url,
     get_smartapi_registry,
     load_api_spec,
+)
+
+logger = logging.getLogger(__name__)
+
+# The generic tools build_biothings_facade registers, whatever the API set.
+FACADE_TOOL_NAMES = frozenset(
+    {
+        "list_biothings_apis",
+        "biothings_query",
+        "biothings_get",
+        "biothings_getbatch",
+        "biothings_fields",
+    }
 )
 
 # Matches a BioThings annotation path like ``/gene/{geneid}`` and captures the
@@ -476,7 +489,7 @@ def build_biothings_facade(
         return entry
 
     async def _request(method: str, url: str, **kwargs) -> dict | list:
-        async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
+        async with httpx2.AsyncClient(timeout=HTTP_TIMEOUT) as client:
             response = await client.request(method, url, **kwargs)
             response.raise_for_status()
             return response.json()

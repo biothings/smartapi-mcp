@@ -105,7 +105,10 @@ class TestCLI:
         call_count = [0]  # Use list to make it mutable in nested function
 
         # Mock asyncio.run to return the expected values
-        def mock_run_side_effect(_coro):
+        def mock_run_side_effect(coro):
+            # asyncio.run is mocked, so nothing awaits the coroutine;
+            # close it to avoid a 'never awaited' RuntimeWarning.
+            coro.close()
             call_count[0] += 1
             if call_count[0] == 1:
                 # First call is get_merged_mcp_server
@@ -163,7 +166,10 @@ class TestCLI:
         call_count = [0]
 
         # Mock asyncio.run calls
-        def mock_run_side_effect(_coro):
+        def mock_run_side_effect(coro):
+            # asyncio.run is mocked, so nothing awaits the coroutine;
+            # close it to avoid a 'never awaited' RuntimeWarning.
+            coro.close()
             call_count[0] += 1
             if call_count[0] == 1:
                 # First call is get_merged_mcp_server
@@ -228,7 +234,10 @@ class TestCLI:
         call_count = [0]
 
         # Mock asyncio.run calls
-        def mock_run_side_effect(_coro):
+        def mock_run_side_effect(coro):
+            # asyncio.run is mocked, so nothing awaits the coroutine;
+            # close it to avoid a 'never awaited' RuntimeWarning.
+            coro.close()
             call_count[0] += 1
             if call_count[0] == 1:
                 # First call is get_merged_mcp_server
@@ -279,7 +288,10 @@ class TestCLI:
         call_count = [0]
 
         # Mock asyncio.run calls
-        def mock_run_side_effect(_coro):
+        def mock_run_side_effect(coro):
+            # asyncio.run is mocked, so nothing awaits the coroutine;
+            # close it to avoid a 'never awaited' RuntimeWarning.
+            coro.close()
             call_count[0] += 1
             if call_count[0] == 1:
                 # First call is get_merged_mcp_server
@@ -328,7 +340,10 @@ class TestCLI:
         call_count = [0]
 
         # Mock asyncio.run calls
-        def mock_run_side_effect(_coro):
+        def mock_run_side_effect(coro):
+            # asyncio.run is mocked, so nothing awaits the coroutine;
+            # close it to avoid a 'never awaited' RuntimeWarning.
+            coro.close()
             call_count[0] += 1
             if call_count[0] == 1:
                 # First call is get_merged_mcp_server
@@ -378,7 +393,10 @@ class TestCLI:
         call_count = [0]
 
         # Mock asyncio.run calls - server creation succeeds, count retrieval fails
-        def mock_run_side_effect(_coro):
+        def mock_run_side_effect(coro):
+            # asyncio.run is mocked, so nothing awaits the coroutine;
+            # close it to avoid a 'never awaited' RuntimeWarning.
+            coro.close()
             call_count[0] += 1
             if call_count[0] == 1:
                 # First call is get_merged_mcp_server
@@ -422,7 +440,10 @@ class TestCLI:
         mock_load_config.return_value = mock_config
 
         # Mock asyncio.run to raise ValueError for unknown API set
-        def mock_run_side_effect(_coro):
+        def mock_run_side_effect(coro):
+            # asyncio.run is mocked, so nothing awaits the coroutine;
+            # close it to avoid a 'never awaited' RuntimeWarning.
+            coro.close()
             # First call is get_merged_mcp_server - should fail
             error_msg = "Unknown API set: unknown"
             raise ValueError(error_msg)
@@ -472,7 +493,10 @@ class TestCLI:
             call_count = [0]
 
             # Mock asyncio.run calls
-            def mock_run_side_effect(_coro):
+            def mock_run_side_effect(coro):
+                # asyncio.run is mocked, so nothing awaits the coroutine;
+                # close it to avoid a 'never awaited' RuntimeWarning.
+                coro.close()
                 call_count[0] += 1
                 if call_count[0] == 1:
                     # First call is get_merged_mcp_server
@@ -527,7 +551,10 @@ class TestCLIEdgeCases:
         mock_load_config.return_value = mock_config
 
         # Mock asyncio.run calls - should fail due to no smartapi_ids
-        def mock_run_side_effect(_coro):
+        def mock_run_side_effect(coro):
+            # asyncio.run is mocked, so nothing awaits the coroutine;
+            # close it to avoid a 'never awaited' RuntimeWarning.
+            coro.close()
             # First call is get_merged_mcp_server - should fail
             error_msg = "No SmartAPI IDs provided or found with the given query."
             raise ValueError(error_msg)
@@ -573,7 +600,10 @@ class TestCLIEdgeCases:
         call_count = [0]
 
         # Mock asyncio.run calls
-        def mock_run_side_effect(_coro):
+        def mock_run_side_effect(coro):
+            # asyncio.run is mocked, so nothing awaits the coroutine;
+            # close it to avoid a 'never awaited' RuntimeWarning.
+            coro.close()
             call_count[0] += 1
             if call_count[0] == 1:
                 # First call is get_merged_mcp_server

@@ -19,9 +19,11 @@ Earlier releases (through 0.3.2) wrapped the [AWS Labs OpenAPI MCP Server](https
 
 - Python 3.10 or higher
 - Network access to SmartAPI registry (https://smart-api.info)
-- Dependencies: `fastmcp>=3.3.1,<4`, `httpx`, `loguru` (fastmcp 4.x is not yet
-  supported — it moves to the MCP 2.x SDK and `httpx2`; see the dependency notes
-  in `pyproject.toml`)
+- Dependencies: `fastmcp>=4.0.1,<5`, `httpx2` and `pyyaml` (logging uses the
+  standard library). fastmcp 4.x uses the
+  MCP 2.x SDK and [httpx2](https://github.com/pydantic/httpx2) (a continuation
+  of httpx under a new package name), so this package imports `httpx2` rather
+  than `httpx`. For fastmcp 3.x, use smartapi-mcp 0.5.0.
 
 ## Features
 
@@ -31,7 +33,8 @@ Earlier releases (through 0.3.2) wrapped the [AWS Labs OpenAPI MCP Server](https
 - 📖 **OpenAPI Validation**: Automatic OpenAPI specification parsing and validation
 - 🛠️ **CLI Interface**: Easy-to-use command-line interface with multiple configuration options
 - 🧬 **Bioinformatics Focus**: Pre-configured API sets for bioinformatics and life sciences
-- 🧩 **Scales to large API sets**: Large BioThings sets (e.g. `biothings_all`, 200+ operations) automatically collapse to ~5 generic tools, avoiding client context overflow without relying on client-side tool deferral
+- 📝 **Test unregistered specs**: `--spec_url` serves an API straight from a spec URL or local file, to try it before registering it or to test an update
+- 🧩 **Scales to large API sets**: Large BioThings sets (e.g. `biothings_all`, 200+ operations) automatically collapse to ~5 generic tools, avoiding client context overflow without relying on client-side tool deferral. `--api_set all` serves the whole reachable registry (~106 APIs) in ~7 listed tools
 - 🎯 **Flexible Configuration**: Support for environment variables, arguments, and configuration files
 - 🚀 **Multiple Transport Modes**: Support for both stdio and HTTP transport protocols
 - 🧪 **Comprehensive Testing**: Full test suite with high code coverage
@@ -78,11 +81,20 @@ brew install uv
 uvx smartapi-mcp --api_set biothings_core
 
 # Run with specific version
-uvx smartapi-mcp@0.2.0 --api_set biothings_core
+uvx smartapi-mcp@0.6.0 --api_set biothings_core
 
 # Run with additional arguments
 uvx smartapi-mcp --smartapi_id 59dce17363dce279d389100834e43648 --server_name "MyGene MCP Server"
+
+# Serve every API the SmartAPI registry reports as reachable (~106 APIs).
+# The default facade and tool-search settings keep this to ~7 listed tools.
+uvx smartapi-mcp --api_set all
 ```
+
+> **Note:** `--api_set all` fetches the live registry and the non-BioThings specs
+> at startup, which takes ~20 seconds. Some MCP clients give up on a server that
+> is slow to start; if yours reports a timeout, raise its startup timeout (for
+> example `MCP_TIMEOUT=60000` for Claude Code) or use a smaller set.
 
 #### Using with Claude Desktop
 
@@ -281,6 +293,12 @@ You can also use environment variables in your MCP client configuration:
 }
 ```
 
+Each option's environment variable is listed in `smartapi-mcp --help`; a command
+line argument always wins over its environment variable. The log level accepts
+either `SMARTAPI_LOG_LEVEL` or the generic `LOG_LEVEL` (the specific name wins
+if both are set); an unrecognised value -- `LOG_LEVEL` may be set for another
+program -- falls back to `INFO` with a warning.
+
 ### Alternative Installation Methods for MCP Clients
 
 #### Using pip in a Virtual Environment
@@ -407,6 +425,46 @@ smartapi-mcp --smartapi_id 59dce17363dce279d389100834e43648
 # Multiple APIs
 smartapi-mcp --smartapi_ids "59dce17363dce279d389100834e43648,09c8782d9f4027712e65b95424adba79"
 ```
+
+#### Serve a spec straight from a URL or file (`--spec_url`)
+
+Test an API before it is registered in SmartAPI, or try an updated version of a
+registered one, by pointing at its spec directly: an `http(s)` URL, a `file://`
+URL or a local path, JSON or YAML.
+
+```bash
+# A draft spec on GitHub
+smartapi-mcp --spec_url https://raw.githubusercontent.com/<org>/<repo>/<branch>/openapi.yml
+
+# A local file, alongside a registry set
+smartapi-mcp --api_set biothings_core --spec_url ./my_api/openapi.yml
+
+# Several specs: repeat the flag, or comma-separate [env: SMARTAPI_SPEC_URLS]
+smartapi-mcp --spec_url ./a.yml --spec_url ./b.yml
+
+# An updated version of a registered API: exclude the registered copy so the
+# two do not appear side by side under near-identical tool names
+smartapi-mcp --api_set biothings_core \
+  --smartapi_exclude_ids 59dce17363dce279d389100834e43648 \
+  --spec_url ./mygene/openapi.yml
+```
+
+These APIs always get per-API tools (never the BioThings facade), prefixed with
+the spec's `info.title`, and stay listed even when tool search collapses the
+rest. Local files are re-read on every start, so edits are picked up.
+
+Unlike registry APIs, which are skipped with a warning if their spec cannot be
+served, a `--spec_url` spec that fails stops the server with the reason, since
+it is the thing being tested. Common causes:
+
+- **External `$ref`s** (`$ref: common.yaml#/...`) are refused for security;
+  bundle a multi-file spec into one document first.
+- **Server URL.** With several `servers`, the one used is the first match of: a
+  description naming it the production server, `x-maturity: production`, or
+  else the first absolute URL not marked `x-maturity: development`, `testing`
+  or `staging` (with a warning). A spec listing only such non-production
+  servers is refused; list the one to use first without that label, or leave
+  only one server -- a single server is always used.
 
 #### Start with HTTP transport (instead of stdio)
 
@@ -631,7 +689,7 @@ To publish a new version:
 
 1. Update the version in `pyproject.toml` and `smartapi_mcp/__init__.py`
 2. Commit the version changes
-3. Create and push a git tag: `git tag v0.2.0 && git push origin v0.2.0`
+3. Create and push a git tag: `git tag v0.6.0 && git push origin v0.6.0`
 4. Create a new release on GitHub
 5. The publish workflow will automatically build and upload to PyPI
 

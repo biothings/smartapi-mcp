@@ -5,6 +5,163 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [0.6.0] - 2026-09-30
+
+### Breaking
+
+- **Requires `fastmcp` 4.x and `httpx2`.** If you construct HTTP clients
+  yourself and hand them to this package, they must now be `httpx2` clients.
+  For fastmcp 3.x, stay on 0.5.0.
+- **`smartapi_mcp.log.logger` is gone.** Each module now uses
+  `logging.getLogger(__name__)`; use `configure_logging()` (exported from the
+  package) to get the previous stderr output.
+
+### Added
+
+- **`--api_set all`** (env `SMARTAPI_API_SET=all`): every API the registry
+  reports as reachable, BioThings or not, via
+  `_status.uptime_status:pass`. This was already expressible as
+  `--smartapi_q '_status.uptime_status:pass'` but undiscoverable, and it only
+  became practical with the defaults introduced in 0.4.0. Measured on the 106
+  matching APIs: **7 listed tools, ~1.9k tokens of `tools/list`, ~19s startup,
+  119 MB RSS** — the BioThings family goes through the facade without
+  downloading a single spec, and the remaining ~294 per-API tools sit behind
+  tool search. Served flat as per-API tools the same set would be ~592 tools
+  and roughly **340k tokens**, so the facade and search defaults are what make
+  it viable at all.
+  Also exported as `WORKING_APIS_QUERY` from `smartapi_mcp.smartapi`.
+- **`--spec_url`** (env `SMARTAPI_SPEC_URLS`): serve an API straight from its
+  spec -- an `http(s)` URL, a `file://` URL or a local path, JSON or YAML --
+  instead of a registry id. For testing a spec before it is registered, or an
+  updated version of a registered one. Repeatable or comma-separated, and
+  usable alone or alongside `--api_set` / `--smartapi_id(s)` / `--smartapi_q`.
+  These APIs always get per-API tools (never the facade) and stay listed when
+  tool search collapses everything else. A spec that cannot be served stops the
+  server with the reason, rather than being skipped as a registry API would be.
+  Local files are never cached, so edits are picked up on restart. External
+  `$ref`s are still refused. Python API: `build_server_for_set(spec_urls=...)`,
+  `build_spec_url_servers()`, `get_mcp_server_from_url()`, and `fetch_spec()`
+  now accepts local paths.
+- **`pyyaml` is now a declared dependency.** YAML specs already parsed because
+  fastmcp installs PyYAML indirectly, but `--spec_url` drafts are usually YAML,
+  so it is no longer left to chance.
+- `configure_logging(level, stream=None, *, color=None)` installs the coloured
+  stderr handler on the `smartapi_mcp` logger, and
+  `configure_third_party_logging()` applies the same level to fastmcp, mcp and
+  httpx2. The CLI calls both; importing the package calls neither.
+
+### Changed
+
+- **Migrated to `fastmcp` 4.x and `httpx2`.** fastmcp 4 moves to the MCP 2.x SDK
+  and replaces `httpx` with [`httpx2`](https://github.com/pydantic/httpx2), a
+  continuation of httpx under a new package name; `FastMCP.from_openapi()` types
+  its `client` parameter as `httpx2.AsyncClient`. Pins are now
+  `fastmcp>=4.0.1,<5` and `httpx2>=2.5,<3`, and `smartapi_mcp.openapi`,
+  `.smartapi` and `.biothings` import `httpx2` directly.
+  Everything we use from httpx exists in httpx2 under the same names, with the
+  same exception hierarchy (`HTTPStatusError`, `ConnectError`,
+  `TimeoutException` and `TransportError` all still subclass `HTTPError`, which
+  the spec-fetch retry logic depends on), so the migration was a module rename
+  rather than a rewrite. Every fastmcp API this package uses survives 4.x at an
+  unchanged import path: `FastMCP.from_openapi`, `fastmcp.client.Client`,
+  `fastmcp.tools.Tool`, `fastmcp.prompts.Prompt`,
+  `fastmcp.utilities.openapi.format_description_with_responses` and the
+  `fastmcp.server.transforms.search` transforms.
+  Otherwise the migration is not behavioural. Verified against a recording of
+  the fastmcp 3 output over the same 107 uptime-passing registry APIs
+  (`scripts/check_spec_parity.py`): the same **92 APIs build**, no tool names
+  change, no descriptions change, and there are **no structural regressions**.
+  401 of 592 input schemas are byte-identical; the other 191 differ only by
+  additions, dominated by **244 `example` values** that fastmcp 3 omitted from
+  input schemas. Two tools on one API (Aragorn TRAPI) additionally have their
+  request body **flattened**: where fastmcp 3 exposed a single nested `request`
+  object parameter, 4.x names each body field individually (`message`,
+  `log_level`, `workflow`, ...), which is easier for a model to fill in. The
+  wire format is unchanged -- the JSON body is still sent nested as the API
+  expects -- and a test now pins both halves of that, since it is fastmcp
+  behaviour we depend on rather than something this package controls.
+- **Logging moved from loguru to the standard library, and importing this
+  package no longer reconfigures the host application's logging.** loguru has a
+  single global logger, so installing our own sink meant calling
+  `logger.remove()` at import time -- which removed *the application's*
+  handlers too. Importing `smartapi_mcp` would silently redirect an embedding
+  app's logs into our stderr sink and drop whatever it had configured, verified
+  by reproducing it. Now each module holds its own `logging.getLogger(__name__)`,
+  the only import-time action is a `NullHandler` on the `smartapi_mcp` logger,
+  and records propagate to the application until it decides otherwise. CLI log
+  output is unchanged: same format, same colours, same call-site detail.
+- **The log level can now be set from the environment**, like every other
+  option: `SMARTAPI_LOG_LEVEL`, or the generic `LOG_LEVEL`, with `--log-level`
+  still taking precedence. The README's configuration examples already used
+  both names, but neither was read. An unrecognised value falls back to `INFO`
+  with a warning rather than failing, since `LOG_LEVEL` may be set for another
+  program.
+- **`--log-level` now also reaches fastmcp, mcp and httpx2.** `DEBUG` turns on
+  their diagnostics, and `WARNING` and above quieten them. At the default
+  `INFO` their own defaults are kept, since mcp and httpx2 log every request at
+  INFO.
+- `get_format()` now returns a `logging` format string (`%(levelname)s`,
+  `%(name)s`, ...) rather than loguru's brace-and-markup syntax. It is still
+  exported, but `configure_logging()` is the supported entry point.
+
+### Fixed
+
+- **`search_tools` now says what its index covers.** fastmcp describes its
+  search tool as "Search for tools using natural language", which gives a model
+  no way to know that the pinned BioThings facade tools are deliberately *not*
+  in the index. On the full working set,
+  `search_tools("gene annotation by entrez id")` returned QuickGO and BTE
+  instead of directing the caller at `biothings_query`. The description now
+  states how many tools are searchable, names the facade tools that are not,
+  and lists the domains they own. Applied through the transform's public
+  `transform_tools` hook, because the synthetic tools are rebuilt on every
+  `list_tools` call, so mutating the returned object does not stick.
+- **`get_base_server_url()` now honours the `x-maturity` extension.** It only
+  inspected the free-text `description` for "Production" (or matched
+  `ci.transltr.io`), so Translator specs that plainly declare a production
+  server were refused. Checked *after* the existing rules, so no API that
+  already resolved changes URL. On the registry's uptime-passing set this took
+  coverage from **92 to 97 of 106 APIs served** when measured; of the rest, the
+  APIs with no production server are now served by the first-server fallback
+  below.
+- **An API with several servers but no identifiable production server is now
+  served from its first server, with a warning, instead of being skipped.**
+  This is the default OpenAPI tooling (Swagger UI, generated clients) uses. It
+  runs only after every existing rule, so no API that already resolved changes
+  URL -- checked against all 102 loadable specs in the registry's
+  uptime-passing set: 101 unchanged, and Identifiers.org (three mirrors, none
+  labelled production) goes from skipped to served. Relative URLs are skipped,
+  and so are servers whose `x-maturity` says `development`, `testing` or
+  `staging`: a spec declaring only those is stating it has no production
+  deployment, so it is still refused.
+- **"Production" in a server description is matched case-insensitively, and
+  "non-production" no longer counts.** `"production server"` was not recognised
+  and `"Non-Production test server"` was taken as production.
+- A `servers` entry without a `url` raised `KeyError: 'url'` from
+  `get_base_server_url()` instead of the clear `ValueError` that follows, and a
+  spec with no `servers` at all raised `KeyError: 'servers'`.
+- **The CLI's signal handler logged a literal `%s` instead of the signal
+  number.** `logger.debug("Received signal %s, ...", sig)` used %-style
+  arguments, but loguru formats with braces, so the argument was silently
+  dropped. The standard library interpolates it correctly.
+
+### Removed
+
+- **Dropped the `loguru` dependency** in favour of the standard library's
+  `logging`. This package used only `debug`/`info`/`warning`/`error` -- none of
+  loguru's distinguishing features (no `.bind()`, `.catch()`, `.opt()`,
+  serialization or rotation) -- and nothing else in the dependency tree required
+  it, so it is one fewer package (426 KB) for no loss of capability.
+- `smartapi_mcp.log.logger`, the loguru logger the other modules used to import
+  (see Breaking).
+- **The `API_SPEC_URL` and `API_BASE_URL` environment variables**, and the
+  `Config.api_spec_url` / `Config.api_base_url` fields they set. They were
+  still accepted after awslabs was dropped in 0.5.0, but nothing read them, so
+  setting either silently did nothing. To serve a spec from a URL, use
+  `--spec_url` / `SMARTAPI_SPEC_URLS`.
+
 ## [0.5.0] - 2026-09-02
 
 ### Added

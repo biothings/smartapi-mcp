@@ -3,15 +3,16 @@ Tests for smartapi_mcp.openapi
 
 This module replaced ``awslabs.openapi_mcp_server``'s spec loader, validator and
 server builder. Everything here is offline: HTTP is served by an
-``httpx.MockTransport`` so the retry, cache and size-cap paths are exercised
+``httpx2.MockTransport`` so the retry, cache and size-cap paths are exercised
 without touching the SmartAPI registry.
 """
 
 import json
 from unittest.mock import patch
 
-import httpx
+import httpx2
 import pytest
+from fastmcp import FastMCP
 
 from smartapi_mcp import openapi as mod
 from smartapi_mcp.openapi import (
@@ -78,15 +79,15 @@ def _clear_cache():
 
 # Captured before any patching, so the factory below builds a real client
 # rather than re-entering the patched name.
-_REAL_CLIENT = httpx.Client
+_REAL_CLIENT = httpx2.Client
 
 
 def mock_client(handler):
-    """Return a factory that swaps httpx.Client's transport for ``handler``."""
+    """Return a factory that swaps httpx2.Client's transport for ``handler``."""
 
     def factory(**kwargs):
         kwargs.pop("follow_redirects", None)
-        return _REAL_CLIENT(transport=httpx.MockTransport(handler), **kwargs)
+        return _REAL_CLIENT(transport=httpx2.MockTransport(handler), **kwargs)
 
     return factory
 
@@ -235,9 +236,9 @@ class TestFetchSpec:
 
     def test_fetches_parses_and_validates(self):
         def handler(_request):
-            return httpx.Response(200, json=MINIMAL_SPEC)
+            return httpx2.Response(200, json=MINIMAL_SPEC)
 
-        with patch.object(httpx, "Client", mock_client(handler)):
+        with patch.object(httpx2, "Client", mock_client(handler)):
             assert fetch_spec("https://example.com/spec") == MINIMAL_SPEC
 
     def test_caches_by_url(self):
@@ -245,9 +246,9 @@ class TestFetchSpec:
 
         def handler(request):
             calls.append(str(request.url))
-            return httpx.Response(200, json=MINIMAL_SPEC)
+            return httpx2.Response(200, json=MINIMAL_SPEC)
 
-        with patch.object(httpx, "Client", mock_client(handler)):
+        with patch.object(httpx2, "Client", mock_client(handler)):
             fetch_spec("https://example.com/spec")
             fetch_spec("https://example.com/spec")
         assert len(calls) == 1
@@ -257,9 +258,9 @@ class TestFetchSpec:
 
         def handler(request):
             calls.append(str(request.url))
-            return httpx.Response(200, json=MINIMAL_SPEC)
+            return httpx2.Response(200, json=MINIMAL_SPEC)
 
-        with patch.object(httpx, "Client", mock_client(handler)):
+        with patch.object(httpx2, "Client", mock_client(handler)):
             fetch_spec("https://example.com/spec", use_cache=False)
             fetch_spec("https://example.com/spec", use_cache=False)
         assert len(calls) == 2
@@ -269,10 +270,10 @@ class TestFetchSpec:
 
         def handler(request):
             calls.append(str(request.url))
-            return httpx.Response(200, json=MINIMAL_SPEC)
+            return httpx2.Response(200, json=MINIMAL_SPEC)
 
         with (
-            patch.object(httpx, "Client", mock_client(handler)),
+            patch.object(httpx2, "Client", mock_client(handler)),
             patch.object(mod, "SPEC_CACHE_TTL", -1),
         ):
             fetch_spec("https://example.com/spec")
@@ -285,11 +286,11 @@ class TestFetchSpec:
         def handler(_request):
             calls.append(1)
             if len(calls) < SPEC_FETCH_ATTEMPTS:
-                return httpx.Response(503)
-            return httpx.Response(200, json=MINIMAL_SPEC)
+                return httpx2.Response(503)
+            return httpx2.Response(200, json=MINIMAL_SPEC)
 
         with (
-            patch.object(httpx, "Client", mock_client(handler)),
+            patch.object(httpx2, "Client", mock_client(handler)),
             patch.object(mod.time, "sleep"),
         ):
             assert fetch_spec("https://example.com/spec") == MINIMAL_SPEC
@@ -300,12 +301,12 @@ class TestFetchSpec:
 
         def handler(_request):
             calls.append(1)
-            return httpx.Response(503)
+            return httpx2.Response(503)
 
         with (
-            patch.object(httpx, "Client", mock_client(handler)),
+            patch.object(httpx2, "Client", mock_client(handler)),
             patch.object(mod.time, "sleep"),
-            pytest.raises(httpx.HTTPStatusError),
+            pytest.raises(httpx2.HTTPStatusError),
         ):
             fetch_spec("https://example.com/spec")
         assert len(calls) == SPEC_FETCH_ATTEMPTS
@@ -316,11 +317,11 @@ class TestFetchSpec:
 
         def handler(_request):
             calls.append(1)
-            return httpx.Response(404)
+            return httpx2.Response(404)
 
         with (
-            patch.object(httpx, "Client", mock_client(handler)),
-            pytest.raises(httpx.HTTPStatusError),
+            patch.object(httpx2, "Client", mock_client(handler)),
+            pytest.raises(httpx2.HTTPStatusError),
         ):
             fetch_spec("https://example.com/spec")
         assert len(calls) == 1
@@ -332,11 +333,11 @@ class TestFetchSpec:
             calls.append(1)
             if len(calls) < 2:
                 err_msg = "connection refused"
-                raise httpx.ConnectError(err_msg, request=request)
-            return httpx.Response(200, json=MINIMAL_SPEC)
+                raise httpx2.ConnectError(err_msg, request=request)
+            return httpx2.Response(200, json=MINIMAL_SPEC)
 
         with (
-            patch.object(httpx, "Client", mock_client(handler)),
+            patch.object(httpx2, "Client", mock_client(handler)),
             patch.object(mod.time, "sleep"),
         ):
             assert fetch_spec("https://example.com/spec") == MINIMAL_SPEC
@@ -344,10 +345,10 @@ class TestFetchSpec:
 
     def test_refuses_an_oversized_spec(self):
         def handler(_request):
-            return httpx.Response(200, content=b"x" * (MAX_SPEC_BYTES + 1))
+            return httpx2.Response(200, content=b"x" * (MAX_SPEC_BYTES + 1))
 
         with (
-            patch.object(httpx, "Client", mock_client(handler)),
+            patch.object(httpx2, "Client", mock_client(handler)),
             pytest.raises(SpecError, match="Spec too large"),
         ):
             fetch_spec("https://example.com/spec")
@@ -359,10 +360,10 @@ class TestFetchSpec:
         }
 
         def handler(_request):
-            return httpx.Response(200, json=spec)
+            return httpx2.Response(200, json=spec)
 
         with (
-            patch.object(httpx, "Client", mock_client(handler)),
+            patch.object(httpx2, "Client", mock_client(handler)),
             pytest.raises(SpecError, match="Refusing to resolve external"),
         ):
             fetch_spec("https://example.com/spec")
@@ -372,11 +373,11 @@ class TestFetchSpec:
 
         def handler(_request):
             if state["fail"]:
-                return httpx.Response(404)
-            return httpx.Response(200, json=MINIMAL_SPEC)
+                return httpx2.Response(404)
+            return httpx2.Response(200, json=MINIMAL_SPEC)
 
-        with patch.object(httpx, "Client", mock_client(handler)):
-            with pytest.raises(httpx.HTTPStatusError):
+        with patch.object(httpx2, "Client", mock_client(handler)):
+            with pytest.raises(httpx2.HTTPStatusError):
                 fetch_spec("https://example.com/spec")
             state["fail"] = False
             assert fetch_spec("https://example.com/spec") == MINIMAL_SPEC
@@ -388,17 +389,17 @@ class TestParsing:
         body = b"openapi: '3.0.0'\ninfo:\n  title: Y\npaths: {}\n"
 
         def handler(_request):
-            return httpx.Response(200, content=body)
+            return httpx2.Response(200, content=body)
 
-        with patch.object(httpx, "Client", mock_client(handler)):
+        with patch.object(httpx2, "Client", mock_client(handler)):
             assert fetch_spec("https://example.com/spec")["info"]["title"] == "Y"
 
     def test_unparseable_content_raises(self):
         def handler(_request):
-            return httpx.Response(200, content=b"\x00not json or yaml: [")
+            return httpx2.Response(200, content=b"\x00not json or yaml: [")
 
         with (
-            patch.object(httpx, "Client", mock_client(handler)),
+            patch.object(httpx2, "Client", mock_client(handler)),
             pytest.raises(SpecError),
         ):
             fetch_spec("https://example.com/spec")
@@ -570,3 +571,66 @@ class TestBuildOpenapiServer:
         out = resolve_internal_refs(spec, skip_prefixes=("#/components/schemas/",))
         assert out["a"] == {"$ref": "#/components/schemas/X"}
         assert out["b"] == {"name": "y", "in": "query"}
+
+    @pytest.mark.asyncio
+    async def test_request_body_is_sent_nested_even_though_the_schema_is_flat(self):
+        """fastmcp 4 hoists request-body fields into top-level tool parameters.
+
+        In fastmcp 3 a body arrived as a single nested object parameter (the
+        TRAPI APIs showed one ``request`` property); 4.x names each field
+        individually, which is easier for a model to fill in. The wire format
+        must not change with it -- the API still expects the nested JSON -- so
+        this pins both halves: flat parameters in, nested body out.
+        """
+        spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Body API", "version": "1.0"},
+            "servers": [{"url": "https://api.example.com"}],
+            "paths": {
+                "/query": {
+                    "post": {
+                        "requestBody": {
+                            "required": True,
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {
+                                            "message": {
+                                                "type": "object",
+                                                "properties": {"q": {"type": "string"}},
+                                            },
+                                            "log_level": {"type": "string"},
+                                        },
+                                        "required": ["message"],
+                                    }
+                                }
+                            },
+                        },
+                        "responses": {"200": {"description": "OK"}},
+                    }
+                }
+            },
+        }
+        captured = {}
+
+        def handler(request):
+            captured["body"] = json.loads(request.content or b"{}")
+            return httpx2.Response(200, json={"ok": True})
+
+        server = FastMCP.from_openapi(
+            openapi_spec=spec,
+            client=httpx2.AsyncClient(
+                base_url="https://api.example.com",
+                transport=httpx2.MockTransport(handler),
+            ),
+            name="Body API",
+        )
+        tool = (await server.list_tools())[0]
+        # The body's fields are separate parameters, not one nested object.
+        assert sorted(tool.parameters["properties"]) == ["log_level", "message"]
+
+        await server.call_tool(
+            tool.name, {"message": {"q": "hello"}, "log_level": "DEBUG"}
+        )
+        assert captured["body"] == {"message": {"q": "hello"}, "log_level": "DEBUG"}

@@ -4,13 +4,14 @@ SmartAPI MCP Server Package
 Create MCP servers for one or multiple APIs registered in SmartAPI registry.
 """
 
-__version__ = "0.5.0"
+__version__ = "0.6.0"
 __author__ = "BioThings Team"
 __email__ = "help@biothings.io"
 
 # Optional imports for when dependencies are available
 try:
     from .biothings import build_biothings_facade, build_registry
+    from .log import configure_logging
     from .openapi import (
         SpecError,
         build_openapi_server,
@@ -39,6 +40,7 @@ try:
         "build_openapi_server",
         "build_registry",
         "build_server_for_set",
+        "configure_logging",
         "fetch_spec",
         "get_base_server_url",
         "get_mcp_server",

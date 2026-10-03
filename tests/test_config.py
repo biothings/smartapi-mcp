@@ -14,7 +14,7 @@ from unittest.mock import patch
 
 import pytest
 
-from smartapi_mcp.config import Config, load_config
+from smartapi_mcp.config import Config, load_config, resolve_log_level
 from smartapi_mcp.server import TOOL_SEARCH_AUTO_THRESHOLD
 
 # Every environment variable load_config reads. Cleared before each test so a
@@ -35,8 +35,9 @@ ENV_KEYS = (
     "SERVER_HOST",
     "SERVER_PORT",
     "SERVER_TRANSPORT",
-    "API_SPEC_URL",
-    "API_BASE_URL",
+    "SMARTAPI_SPEC_URLS",
+    "SMARTAPI_LOG_LEVEL",
+    "LOG_LEVEL",
 )
 
 
@@ -83,8 +84,6 @@ class TestConfig:
         something the package actually reads.
         """
         assert {f.name for f in fields(Config)} == {
-            "api_base_url",
-            "api_spec_url",
             "host",
             "port",
             "transport",
@@ -94,6 +93,8 @@ class TestConfig:
             "smartapi_exclude_ids",
             "smartapi_q",
             "smartapi_api_set",
+            "spec_urls",
+            "log_level",
             "facade",
             "facade_threshold",
             "facade_strict",
@@ -354,3 +355,57 @@ class TestLoadConfigArgs:
     def test_completion_is_logged_once(self, mock_logger):
         load_config()
         mock_logger.info.assert_called_once_with("SmartAPI Configuration loaded")
+
+
+class TestLogLevel:
+    """--log-level, SMARTAPI_LOG_LEVEL and LOG_LEVEL, in that order."""
+
+    def test_default_is_info(self):
+        assert resolve_log_level() == "INFO"
+        assert load_config().log_level == "INFO"
+
+    def test_log_level_env_var(self):
+        with patch.dict(os.environ, {"LOG_LEVEL": "debug"}):
+            assert load_config().log_level == "DEBUG"
+
+    def test_smartapi_log_level_beats_log_level(self):
+        with patch.dict(
+            os.environ, {"SMARTAPI_LOG_LEVEL": "WARNING", "LOG_LEVEL": "DEBUG"}
+        ):
+            assert load_config().log_level == "WARNING"
+
+    def test_cli_beats_env(self):
+        with patch.dict(os.environ, {"SMARTAPI_LOG_LEVEL": "WARNING"}):
+            args = SimpleNamespace(log_level="ERROR")
+            assert load_config(args).log_level == "ERROR"
+
+    def test_unknown_env_value_falls_back_to_info_with_a_warning(self, caplog):
+        """LOG_LEVEL may belong to another program, with its own vocabulary."""
+        with (
+            patch.dict(os.environ, {"LOG_LEVEL": "trace"}),
+            caplog.at_level("WARNING", logger="smartapi_mcp.config"),
+        ):
+            assert load_config().log_level == "INFO"
+        assert "Ignoring LOG_LEVEL='trace'" in caplog.text
+
+    def test_silent_resolution_does_not_warn(self, caplog):
+        """The CLI's first, pre-logging resolution must not emit anything."""
+        with (
+            patch.dict(os.environ, {"LOG_LEVEL": "trace"}),
+            caplog.at_level("WARNING", logger="smartapi_mcp.config"),
+        ):
+            assert resolve_log_level() == "INFO"
+        assert caplog.text == ""
+
+
+class TestRemovedEnvVars:
+    def test_api_spec_url_and_api_base_url_are_ignored(self):
+        """Never read since awslabs was dropped; removed in 0.6.0."""
+        with patch.dict(
+            os.environ,
+            {"API_SPEC_URL": "https://x/spec.yaml", "API_BASE_URL": "https://x"},
+        ):
+            config = load_config()
+        assert config.spec_urls is None
+        assert not hasattr(config, "api_base_url")
+        assert not hasattr(config, "api_spec_url")

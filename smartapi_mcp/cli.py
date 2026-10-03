@@ -6,15 +6,18 @@ Provides CLI commands for running and managing the SmartAPI MCP server.
 
 import argparse
 import asyncio
+import logging
 import signal
 import sys
 import traceback
 
 from fastmcp import FastMCP
 
-from .config import load_config
-from .log import get_format, logger
+from .config import load_config, resolve_log_level
+from .log import configure_logging, configure_third_party_logging
 from .server import TOOL_SEARCH_MODES, build_server_for_set
+
+logger = logging.getLogger(__name__)
 
 
 async def get_all_counts(server: FastMCP) -> tuple[int, int, int, int]:
@@ -38,7 +41,10 @@ def main():
         help=(
             "A predefined set of SmartAPI APIs to include. One of: "
             "'biothings_core' (the 6 core BioThings APIs), 'biothings_test' "
-            "(core + SemmedDB), or 'biothings_all' (all BioThings APIs). "
+            "(core + SemmedDB), 'biothings_all' (all BioThings APIs), or "
+            "'all' (every API the registry reports as reachable, BioThings or "
+            "not -- ~106 APIs, which the default facade and tool-search "
+            "settings keep down to ~7 listed tools). "
             "[env: SMARTAPI_API_SET]"
         ),
     )
@@ -65,6 +71,19 @@ def main():
         help=(
             "Exclude a list of SmartAPIs (comma-separated ids) to create a MCP "
             "server. [env: SMARTAPI_EXCLUDE_IDS]"
+        ),
+    )
+    parser.add_argument(
+        "--spec_url",
+        action="append",
+        default=None,
+        help=(
+            "Serve an API straight from its OpenAPI/SmartAPI spec instead of a "
+            "registry id: an http(s) URL, a file:// URL or a local path, JSON or "
+            "YAML. Useful for testing a spec before it is registered, or an "
+            "updated version of a registered one. Repeatable, or comma-separated. "
+            "Works alone or together with the options above; these APIs always "
+            "get per-API tools. [env: SMARTAPI_SPEC_URLS]"
         ),
     )
     parser.add_argument(
@@ -171,16 +190,24 @@ def main():
     parser.add_argument(
         "--log-level",
         choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
-        default="INFO",
-        help="Set logging level",
+        default=None,
+        help=(
+            "Set the logging level. Default is INFO. "
+            "[env: SMARTAPI_LOG_LEVEL, or LOG_LEVEL]"
+        ),
     )
 
     args = parser.parse_args()
 
-    # Set up logging with loguru at specified level
-    logger.remove()
-    logger.add(sys.stderr, format=get_format(), level=args.log_level)
-    logger.info(f"Starting server with logging level: {args.log_level}")
+    # Install our stderr handler. This is the only place the package configures
+    # logging: doing it at import time would clobber a host application's setup.
+    # The level is resolved here, ahead of load_config, so that load_config's
+    # own debug output is already visible; load_config resolves it again and
+    # reports an unrecognised environment value now that a handler exists.
+    log_level = resolve_log_level(args.log_level)
+    configure_logging(log_level)
+    configure_third_party_logging(log_level)
+    logger.info(f"Starting server with logging level: {log_level}")
 
     # Load configuration
     logger.debug("Loading configuration from arguments and environment")
@@ -203,14 +230,23 @@ def main():
                 tool_search=config.tool_search,
                 tool_search_max_results=config.tool_search_max_results,
                 tool_search_threshold=config.tool_search_threshold,
+                spec_urls=config.spec_urls,
             )
         )
     except ValueError as e:
         logger.error(f"Cannot start server: {e}")
-        logger.error(
-            "Specify which APIs to serve with one of: --api_set, --smartapi_id, "
-            "--smartapi_ids, or --smartapi_q (see --help)."
-        )
+        if not (
+            config.smartapi_api_set
+            or config.smartapi_id
+            or config.smartapi_ids
+            or config.smartapi_q
+            or config.spec_urls
+        ):
+            logger.error(
+                "Specify which APIs to serve with one of: --api_set, "
+                "--smartapi_id, --smartapi_ids, --smartapi_q or --spec_url "
+                "(see --help)."
+            )
         sys.exit(1)
 
     # Set up signal handlers (local implementation avoids sys.exit in handler)

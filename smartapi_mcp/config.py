@@ -6,7 +6,9 @@ inherit its ~40 fields, of which this package read five (``api_spec_url``,
 ``api_base_url``, ``host``, ``port``, ``transport``); the other thirty-five
 covered authentication schemes, Cognito, tag filtering and multi-spec
 composition that SmartAPI's public APIs never used. It is now a standalone
-dataclass carrying only what is actually read.
+dataclass carrying only what is actually read. (``api_spec_url`` and
+``api_base_url`` stopped being read when awslabs was dropped and were removed
+in 0.6.0; ``spec_urls`` is the replacement for the former.)
 
 Precedence is CLI argument > environment variable > default. That relies on
 argparse passing ``None`` for unset flags: ``load_config`` assigns from ``args``
@@ -15,21 +17,17 @@ silently overwrite the environment on every run. ``cli.py`` sets those defaults
 to ``None`` and ``tests/test_tool_search.py`` guards it.
 """
 
+import logging
 import os
 from dataclasses import dataclass
 from typing import Any
 
-from .log import logger
+logger = logging.getLogger(__name__)
 
 
 @dataclass
 class Config:
     """Everything the server needs to decide what to serve and how."""
-
-    # Per-API values, filled in while building each API's server rather than by
-    # the operator. Kept on Config because the build path threads them through.
-    api_base_url: str = ""
-    api_spec_url: str = ""
 
     # MCP server transport
     host: str = "127.0.0.1"
@@ -43,6 +41,11 @@ class Config:
     smartapi_exclude_ids: list[str] | None = None
     smartapi_q: str = ""
     smartapi_api_set: str = ""
+    # Spec URLs or local files to serve alongside (or instead of) the above
+    spec_urls: list[str] | None = None
+
+    # Logging
+    log_level: str = "INFO"
 
     # BioThings generic facade
     facade: str = "auto"
@@ -66,6 +69,46 @@ def _parse_int(value: str, default: int) -> int:
         return default
 
 
+def _split_list(values: list[str]) -> list[str]:
+    """Flatten comma-separated ``values`` into a deduped list, dropping blanks."""
+    items = (item.strip() for value in values for item in value.split(","))
+    return list(dict.fromkeys(item for item in items if item))
+
+
+LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
+
+# Checked in order; the first one set wins. LOG_LEVEL is the generic name many
+# deployment environments already set, SMARTAPI_LOG_LEVEL the specific one.
+LOG_LEVEL_ENV_VARS = ("SMARTAPI_LOG_LEVEL", "LOG_LEVEL")
+
+
+def resolve_log_level(cli_value: str | None = None, *, warn: bool = False) -> str:
+    """Return the log level from ``--log-level``, the environment, or ``INFO``.
+
+    Precedence is ``cli_value`` > ``SMARTAPI_LOG_LEVEL`` > ``LOG_LEVEL``. An
+    unrecognised environment value falls back to ``INFO`` rather than failing,
+    since ``LOG_LEVEL`` may be set for some other program with its own
+    vocabulary (``trace``, ``verbose``, a number). ``warn`` logs that fallback;
+    the CLI resolves the level once silently to configure logging, then again
+    through :func:`load_config` with ``warn=True`` so the warning is visible.
+    """
+    if cli_value:
+        return cli_value.upper()
+    for name in LOG_LEVEL_ENV_VARS:
+        value = os.environ.get(name, "").strip()
+        if not value:
+            continue
+        if value.upper() in LOG_LEVELS:
+            return value.upper()
+        if warn:
+            logger.warning(
+                f"Ignoring {name}={value!r}: not one of {', '.join(LOG_LEVELS)}. "
+                "Using INFO."
+            )
+        return "INFO"
+    return "INFO"
+
+
 def load_config(args: Any = None) -> Config:
     """Build a :class:`Config` from environment variables and CLI arguments."""
     config = Config()
@@ -78,6 +121,9 @@ def load_config(args: Any = None) -> Config:
         ),
         "SMARTAPI_Q": (lambda v: setattr(config, "smartapi_q", v)),
         "SMARTAPI_API_SET": (lambda v: setattr(config, "smartapi_api_set", v)),
+        "SMARTAPI_SPEC_URLS": (
+            lambda v: setattr(config, "spec_urls", _split_list([v]))
+        ),
         "SMARTAPI_FACADE": (lambda v: setattr(config, "facade", v.strip().lower())),
         "FACADE_THRESHOLD": (
             lambda v: setattr(config, "facade_threshold", _parse_int(v, 10))
@@ -96,8 +142,6 @@ def load_config(args: Any = None) -> Config:
         "SERVER_HOST": (lambda v: setattr(config, "host", v)),
         "SERVER_PORT": (lambda v: setattr(config, "port", _parse_int(v, 8000))),
         "SERVER_TRANSPORT": (lambda v: setattr(config, "transport", v)),
-        "API_SPEC_URL": (lambda v: setattr(config, "api_spec_url", v)),
-        "API_BASE_URL": (lambda v: setattr(config, "api_base_url", v)),
     }
 
     env_loaded = {}
@@ -106,6 +150,13 @@ def load_config(args: Any = None) -> Config:
             env_value = os.environ[key]
             setter(env_value)
             env_loaded[key] = env_value
+
+    config.log_level = resolve_log_level(
+        getattr(args, "log_level", None) if args else None, warn=True
+    )
+    for name in LOG_LEVEL_ENV_VARS:
+        if name in os.environ:
+            env_loaded[name] = os.environ[name]
 
     if env_loaded:
         logger.debug(
@@ -144,6 +195,13 @@ def load_config(args: Any = None) -> Config:
                 f"Setting predefined SmartAPI API set from arguments: {args.api_set}"
             )
             config.smartapi_api_set = args.api_set
+        if getattr(args, "spec_url", None):
+            # A repeatable flag, each value optionally comma-separated.
+            values = args.spec_url
+            config.spec_urls = _split_list(
+                [values] if isinstance(values, str) else list(values)
+            )
+            logger.debug(f"Setting spec URLs from arguments: {config.spec_urls}")
         if getattr(args, "server_name", None):
             logger.debug(f"Setting MCP Server name from arguments: {args.server_name}")
             config.server_name = args.server_name
